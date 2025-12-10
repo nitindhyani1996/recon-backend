@@ -50,17 +50,17 @@ class FileUpload:
                 save_result = await BulkUploadService.saveUploadedFile(db, fileType)
                 df.columns = [str(col).strip().lower() for col in df.columns]
                 normalized_data = df.to_dict(orient="records")
-            
+
                 if save_result['status'] == 'success':
                     if fileType['fileType'] == "ATM":
                         saveAtmResult = await BulkUploadService.saveATMFileData(db, normalized_data, save_result['insertedId'])
                         return {"data": fileType,"result": saveAtmResult,  "message": "ATM file uploded"}
-                    # elif fileType['fileType'] == "SWITCH":
-                    #     print('dsaddasdas')
-                    #     # breakpoint()
-                    #     return {"data": fileType,"result": normalized_data,  "message": "ATM file uploded"}
-                        # saveSwitchresult = await BulkUploadService.saveSwitchFileData(db, normalized_data, save_result['insertedId'])
-                        # return {"data": fileType,"result": saveSwitchresult,  "message": "Switch file uploded"}
+                    elif fileType['fileType'] == "SWITCH":
+                        saveSwitchresult = await BulkUploadService.saveSwitchFileData(db, normalized_data, save_result['insertedId'])
+                        return {"data": fileType,"result": saveSwitchresult,  "message": "Switch file uploded"}
+                    elif fileType['fileType'] == "FLEXCUBE":
+                        saveSwitchresult = await BulkUploadService.saveFlexCubeFileData(db, normalized_data, save_result['insertedId'])
+                        return {"data": fileType,"result": saveSwitchresult,  "message": "Switch file uploded"}
                     return { "message": "Not FOund"}
                 else:
                     return {"data": fileType,"result": save_result,  "message": "file uploded with errors"}
@@ -69,5 +69,10 @@ class FileUpload:
 
         except Exception as e:
             return {"file_type": "ERROR", "error": str(e)}
+        
+
+    @staticmethod
+    async def get_file_list(db, offset: int, limit: int):
+        return BulkUploadService.get_file_list(db, offset, limit)
 
 

@@ -15,6 +15,10 @@ fileUploadController = FileUpload()
 async def upload_file(file: UploadFile = File(...),db: Session = Depends(get_db)):
     return await fileUploadController.upload_file(db, file)
 
+@router.get("/file-list")
+async def getUplaodFileList(offset:int = 0, limit:int= 0, db: Session = Depends(get_db)):
+    return await fileUploadController.get_file_list(db, offset, limit)
+
 @router.get("/db-test")
 def db_test(db: Session = Depends(get_db)):
     return {"message": "PostgreSQL connected successfully!"}

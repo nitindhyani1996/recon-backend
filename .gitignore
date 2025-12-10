@@ -28,11 +28,6 @@ Thumbs.db
 # Alembic migration cache
 alembic/versions/
 
-# Database files
-app/dbSqlfile.sql
-*.sqlite3
-*.db
-
 # Logs and temp files
 *.log
 *.tmp
