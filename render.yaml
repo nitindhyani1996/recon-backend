@@ -3,8 +3,8 @@ services:
     name: recon-backend
     env: python
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: /bin/bash ./start.sh
+    buildCommand: pip install -r requirements.txt && alembic upgrade head
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port 10000
     autoDeploy: true
     envVars:
       - key: DB_HOST
