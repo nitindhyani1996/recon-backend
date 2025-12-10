@@ -1,12 +1,16 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
+from dotenv import load_dotenv
+import os
 
-DB_HOST = "localhost"
-DB_PORT = 5432
-DB_USER = "postgres"
-DB_PASS = "1234"
-DB_NAME = "recon_db"
+load_dotenv()
+
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = int(os.getenv("DB_PORT", "5432"))
+DB_USER = os.getenv("DB_USER", "postgres")
+DB_PASS = os.getenv("DB_PASS", "1234")
+DB_NAME = os.getenv("DB_NAME", "recon_db")
 
 DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
