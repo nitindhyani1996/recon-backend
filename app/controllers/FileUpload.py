@@ -1,3 +1,4 @@
+import asyncio
 from app.utils.file_reader import read_file_by_extension
 from app.utils.smart_column_mapper import SmartColumnMapper
 from app.services.bulkUploadService import BulkUploadService
@@ -74,5 +75,41 @@ class FileUpload:
     @staticmethod
     async def get_file_list(db, offset: int, limit: int):
         return BulkUploadService.get_file_list(db, offset, limit)
+    
+    @staticmethod
+    async def getAtmTransactionsMatchingCount(db):
+        return BulkUploadService.getAtmTransactionsMatchingCount(db)
+    
+    @staticmethod
+    async def getAtmTransactionsMatchingDetails(db, offset, limit, type):
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None,  # default thread pool
+            BulkUploadService.getAtmTransactionsMatchingDetails,
+            db, offset, limit, type
+        )
+        return result
+    
+    @staticmethod
+    async def getAtmTransactionsNotMatchingDetails(db, offset, limit, type):
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None,  # default thread pool
+            BulkUploadService.getAtmTransactionsNotMatchingDetails,
+            db, offset, limit, type
+        )
+        return result
+    
+     
+    @staticmethod
+    async def getAtmTransactionsPartiallyMatchingDetails(db, offset, limit):
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None,  # default thread pool
+            BulkUploadService.getAtmTransactionsPartiallyMatchingDetails,
+            db, offset, limit
+        )
+        print('result', len(result))
+        return result
 
 

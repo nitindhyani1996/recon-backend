@@ -1,9 +1,14 @@
 import json
+
+import pandas as pd
 from app.models.atm_transaction import ATMTransaction
 from app.models.Upload import UploadedFile
 from app.models.SwitchTransaction import SwitchTransaction
 from app.models.FlexcubeTransaction import FlexcubeTransaction
 from sqlalchemy.orm import Session
+from sqlalchemy import func, cast, String, select, text, union_all, case
+from sqlalchemy.orm import aliased
+import numpy as np
 
 class BulkUploadService:
     @staticmethod
@@ -179,5 +184,374 @@ class BulkUploadService:
             "total": total,
             "data": data
         }
+    
+    @staticmethod
+    def getAtmTransactionsMatchingCount(db: Session):
+
+        query = """
+        WITH combined_rrn AS (
+            SELECT TRIM(CAST(rrn AS VARCHAR)) AS rrn, 'ATM' AS source
+            FROM atm_transactions
+            WHERE rrn IS NOT NULL
+
+            UNION ALL
+            
+            SELECT TRIM(CAST(rrn AS VARCHAR)) AS rrn, 'SWITCH' AS source
+            FROM switch_transactions
+            WHERE rrn IS NOT NULL
+
+            UNION ALL
+            
+            SELECT TRIM(CAST(rrn AS VARCHAR)) AS rrn, 'FLEXCUBE' AS source
+            FROM flexcube_transactions
+            WHERE rrn IS NOT NULL
+        ),
+        rrn_summary AS (
+            SELECT rrn,
+                COUNT(DISTINCT source) AS match_count
+            FROM combined_rrn
+            GROUP BY rrn
+        )
+        SELECT 
+            SUM(CASE WHEN match_count = 3 THEN 1 ELSE 0 END) AS fully_matched,
+            SUM(CASE WHEN match_count = 2 THEN 1 ELSE 0 END) AS partially_matched,
+            SUM(CASE WHEN match_count = 1 THEN 1 ELSE 0 END) AS not_matched
+        FROM rrn_summary;
+        """
+
+        # MUCH CLEANER FIX
+        with db.connection() as conn:
+            df = pd.read_sql(text(query), conn)
+
+        return {
+            "fully_matched": int(df["fully_matched"][0] or 0),
+            "partially_matched": int(df["partially_matched"][0] or 0),
+            "not_matched": int(df["not_matched"][0] or 0)
+        }
+    
+
+
+
+    @staticmethod
+    def getAtmTransactionsMatchingCount(db: Session):
+
+        query = """
+        WITH combined_rrn AS (
+            SELECT TRIM(CAST(rrn AS VARCHAR)) AS rrn, 'ATM' AS source
+            FROM atm_transactions
+            WHERE rrn IS NOT NULL
+
+            UNION ALL
+            
+            SELECT TRIM(CAST(rrn AS VARCHAR)) AS rrn, 'SWITCH' AS source
+            FROM switch_transactions
+            WHERE rrn IS NOT NULL
+
+            UNION ALL
+            
+            SELECT TRIM(CAST(rrn AS VARCHAR)) AS rrn, 'FLEXCUBE' AS source
+            FROM flexcube_transactions
+            WHERE rrn IS NOT NULL
+        ),
+        rrn_summary AS (
+            SELECT rrn,
+                COUNT(DISTINCT source) AS match_count
+            FROM combined_rrn
+            GROUP BY rrn
+        )
+        SELECT 
+            SUM(CASE WHEN match_count = 3 THEN 1 ELSE 0 END) AS fully_matched,
+            SUM(CASE WHEN match_count = 2 THEN 1 ELSE 0 END) AS partially_matched,
+            SUM(CASE WHEN match_count = 1 THEN 1 ELSE 0 END) AS not_matched
+        FROM rrn_summary;
+        """
+
+        # MUCH CLEANER FIX
+        with db.connection() as conn:
+            df = pd.read_sql(text(query), conn)
+
+        return {
+            "fully_matched": int(df["fully_matched"][0] or 0),
+            "partially_matched": int(df["partially_matched"][0] or 0),
+            "not_matched": int(df["not_matched"][0] or 0)
+        }
+    
+
+    @staticmethod
+    def getAtmTransactionsMatchingDetails(db: Session, offset: int = 0, limit: int = 100, type: int = 0):
+        """
+        Get fully matched RRN records (present in ATM, SWITCH, and FLEXCUBE)
+        with all table columns. Returns paginated results.
+        """
+        query = f"""
+        WITH combined_rrn AS (
+            SELECT TRIM(CAST(rrn AS VARCHAR)) AS rrn, 'ATM' AS source
+            FROM atm_transactions
+            WHERE rrn IS NOT NULL
+
+            UNION ALL
+            
+            SELECT TRIM(CAST(rrn AS VARCHAR)) AS rrn, 'SWITCH' AS source
+            FROM switch_transactions
+            WHERE rrn IS NOT NULL
+
+            UNION ALL
+            
+            SELECT TRIM(CAST(rrn AS VARCHAR)) AS rrn, 'FLEXCUBE' AS source
+            FROM flexcube_transactions
+            WHERE rrn IS NOT NULL
+        ),
+        rrn_summary AS (
+            SELECT
+                rrn,
+                COUNT(DISTINCT source) AS match_count
+            FROM combined_rrn
+            GROUP BY rrn
+        ),
+        fully_matched AS (
+            SELECT rrn
+            FROM rrn_summary
+            WHERE match_count = 3
+        ),
+        atm_one AS (
+            SELECT *
+            FROM (
+                SELECT *, ROW_NUMBER() OVER (PARTITION BY TRIM(CAST(rrn AS VARCHAR)) ORDER BY id ASC) AS rn
+                FROM atm_transactions
+            ) t
+            WHERE rn = 1
+        ),
+        switch_one AS (
+            SELECT *
+            FROM (
+                SELECT *, ROW_NUMBER() OVER (PARTITION BY TRIM(CAST(rrn AS VARCHAR)) ORDER BY id ASC) AS rn
+                FROM switch_transactions
+            ) t
+            WHERE rn = 1
+        ),
+        flex_one AS (
+            SELECT *
+            FROM (
+                SELECT *, ROW_NUMBER() OVER (PARTITION BY TRIM(CAST(rrn AS VARCHAR)) ORDER BY id ASC) AS rn
+                FROM flexcube_transactions
+            ) t
+            WHERE rn = 1
+        )
+        SELECT 
+            f.rrn AS rrn,
+
+            -- ATM columns
+            a.id AS atm_id,
+            a.datetime AS atm_datetime,
+            a.terminalid AS atm_terminalid,
+            a.location AS atm_location,
+            a.atmindex AS atm_index,
+            a.pan_masked AS atm_pan_masked,
+            a.account_masked AS atm_account_masked,
+            a.transactiontype AS atm_transactiontype,
+            a.amount AS atm_amount,
+            a.currency AS atm_currency,
+            a.stan AS atm_stan,
+            a.auth AS atm_auth,
+            a.responsecode AS atm_responsecode,
+            a.responsedesc AS atm_responsedesc,
+            a.uploaded_by AS atm_uploaded_by,
+
+            -- SWITCH columns
+            s.id AS switch_id,
+            s.datetime AS switch_datetime,
+            s.terminalid AS switch_terminalid,
+            s.direction AS switch_direction,
+            s.mti AS switch_mti,
+            s.pan_masked AS switch_pan_masked,
+            s.processingcode AS switch_processingcode,
+            s.amountminor AS switch_amountminor,
+            s.currency AS switch_currency,
+            s.stan AS switch_stan,
+            s.rrn AS switch_rrn,
+            s.source AS switch_source,
+            s.destination AS switch_destination,
+            s.uploaded_by AS switch_uploaded_by,
+
+            -- FLEXCUBE columns
+            fc.id AS fc_id,
+            fc.posted_datetime AS fc_posted_datetime,
+            fc.fc_txn_id AS fc_txn_id,
+            fc.rrn AS fc_rrn,
+            fc.stan AS fc_stan,
+            fc.account_masked AS fc_account_masked,
+            fc.dr AS fc_dr,
+            fc.cr AS fc_cr,
+            fc.currency AS fc_currency,
+            fc.status AS fc_status,
+            fc.description AS fc_description,
+            fc.uploaded_by AS fc_uploaded_by
+
+        FROM fully_matched f
+        LEFT JOIN atm_one a ON TRIM(CAST(a.rrn AS VARCHAR)) = f.rrn
+        LEFT JOIN switch_one s ON TRIM(CAST(s.rrn AS VARCHAR)) = f.rrn
+        LEFT JOIN flex_one fc ON TRIM(CAST(fc.rrn AS VARCHAR)) = f.rrn
+        ORDER BY f.rrn
+        LIMIT :limit OFFSET :offset;
+        """
+
+        # Use connection from Session and read SQL into Pandas DataFrame
+        with db.connection() as conn:
+            df = pd.read_sql(text(query), conn, params={"offset": offset, "limit": limit})
+        # Replace NaN with None for JSON serialization
+        df = df.replace({np.nan: None, np.inf: None, -np.inf: None})
+        return df.to_dict(orient="records")
+
+    @staticmethod
+    def getAtmTransactionsNotMatchingDetails(db: Session, offset: int = 0, limit: int = 100, type: int = 0):
+        """
+        Get RRN records that are present only in one table (not in other 2 tables)
+        Returns paginated results with unified columns for ATM, SWITCH, and FLEXCUBE.
+        """
+        query = f"""
+        SELECT * FROM (
+            -- ATM only
+            SELECT 'ATM' AS source_table,
+                a.rrn::varchar,
+                a.id::bigint,
+                a.datetime::timestamp,
+                a.terminalid::varchar,
+                a.location::varchar,
+                a.atmindex::int,
+                a.pan_masked::varchar,
+                a.account_masked::varchar,
+                a.transactiontype::varchar,
+                a.amount::numeric,
+                a.currency::varchar,
+                a.stan::varchar,
+                a.auth::varchar,
+                a.responsecode::varchar,
+                a.responsedesc::varchar,
+                a.uploaded_by::bigint
+            FROM atm_transactions a
+            LEFT JOIN switch_transactions s ON TRIM(CAST(a.rrn AS VARCHAR)) = TRIM(CAST(s.rrn AS VARCHAR))
+            LEFT JOIN flexcube_transactions fc ON TRIM(CAST(a.rrn AS VARCHAR)) = TRIM(CAST(fc.rrn AS VARCHAR))
+            WHERE s.rrn IS NULL AND fc.rrn IS NULL
+
+            UNION ALL
+
+            -- SWITCH only
+            SELECT 'SWITCH' AS source_table,
+                s.rrn::varchar,
+                s.id::bigint,
+                s.datetime::timestamp,
+                s.terminalid::varchar,
+                NULL::varchar AS location,
+                NULL::int AS atmindex,
+                s.pan_masked::varchar,
+                NULL::varchar AS account_masked,
+                NULL::varchar AS transactiontype,
+                s.amountminor::numeric AS amount,
+                s.currency::varchar,
+                s.stan::varchar,
+                NULL::varchar AS auth,
+                NULL::varchar AS responsecode,
+                NULL::varchar AS responsedesc,
+                s.uploaded_by::bigint
+            FROM switch_transactions s
+            LEFT JOIN atm_transactions a ON TRIM(CAST(s.rrn AS VARCHAR)) = TRIM(CAST(a.rrn AS VARCHAR))
+            LEFT JOIN flexcube_transactions fc ON TRIM(CAST(s.rrn AS VARCHAR)) = TRIM(CAST(fc.rrn AS VARCHAR))
+            WHERE a.rrn IS NULL AND fc.rrn IS NULL
+
+            UNION ALL
+
+            -- FLEXCUBE only
+            SELECT 'FLEXCUBE' AS source_table,
+                fc.rrn::varchar,
+                fc.id::bigint,
+                fc.posted_datetime::timestamp,
+                NULL::varchar AS terminalid,
+                NULL::varchar AS location,
+                NULL::int AS atmindex,
+                NULL::varchar AS pan_masked,
+                fc.account_masked::varchar,
+                NULL::varchar AS transactiontype,
+                (fc.dr + fc.cr)::numeric AS amount,
+                fc.currency::varchar,
+                fc.stan::varchar,
+                NULL::varchar AS auth,
+                NULL::varchar AS responsecode,
+                NULL::varchar AS responsedesc,
+                fc.uploaded_by::bigint
+            FROM flexcube_transactions fc
+            LEFT JOIN atm_transactions a ON TRIM(CAST(fc.rrn AS VARCHAR)) = TRIM(CAST(a.rrn AS VARCHAR))
+            LEFT JOIN switch_transactions s ON TRIM(CAST(fc.rrn AS VARCHAR)) = TRIM(CAST(s.rrn AS VARCHAR))
+            WHERE a.rrn IS NULL AND s.rrn IS NULL
+        ) t
+        ORDER BY rrn
+        LIMIT :limit OFFSET :offset;
+        """
+
+        # Use connection from Session and read SQL into Pandas DataFrame
+        with db.connection() as conn:
+            df = pd.read_sql(text(query), conn, params={"offset": offset, "limit": limit})
+        
+        # Replace NaN/inf with None for JSON serialization
+        df = df.replace({np.nan: None, np.inf: None, -np.inf: None})
+        return df.to_dict(orient="records")
+    
+
+    @staticmethod
+    def getAtmTransactionsPartiallyMatchingDetails(db: Session, offset: int = 0, limit: int = 100):
+        """
+        Get ATM RRN records that are partially matched (present in ATM and at least one other table,
+        but not in all three tables). Returns paginated results.
+        """
+        query = f"""
+        WITH combined_rrn AS (
+            SELECT TRIM(CAST(rrn AS VARCHAR)) AS rrn, 'ATM' AS source
+            FROM atm_transactions
+            WHERE rrn IS NOT NULL
+
+            UNION ALL
+
+            SELECT TRIM(CAST(rrn AS VARCHAR)) AS rrn, 'SWITCH' AS source
+            FROM switch_transactions
+            WHERE rrn IS NOT NULL
+
+            UNION ALL
+
+            SELECT TRIM(CAST(rrn AS VARCHAR)) AS rrn, 'FLEXCUBE' AS source
+            FROM flexcube_transactions
+            WHERE rrn IS NOT NULL
+        ),
+        rrn_summary AS (
+            SELECT rrn,
+                COUNT(DISTINCT source) AS match_count,
+                BOOL_OR(source = 'ATM') AS in_atm,
+                BOOL_OR(source = 'SWITCH') AS in_switch,
+                BOOL_OR(source = 'FLEXCUBE') AS in_flexcube
+            FROM combined_rrn
+            GROUP BY rrn
+        ),
+        atm_partial AS (
+            SELECT rrn
+            FROM rrn_summary
+            WHERE in_atm = TRUE
+            AND match_count < 3  -- partially matched
+        )
+        SELECT a.*
+        FROM atm_transactions a
+        INNER JOIN atm_partial ap ON TRIM(CAST(a.rrn AS VARCHAR)) = ap.rrn
+        ORDER BY a.rrn
+        LIMIT :limit OFFSET :offset;
+        """
+
+        # Execute SQL and load into DataFrame
+        with db.connection() as conn:
+            df = pd.read_sql(text(query), conn, params={"offset": offset, "limit": limit})
+
+        # Replace NaN/inf with None for JSON serialization
+        df = df.replace({np.nan: None, np.inf: None, -np.inf: None})
+        return df.to_dict(orient="records")
+
+
+    
+    
     
     
