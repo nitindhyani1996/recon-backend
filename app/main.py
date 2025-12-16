@@ -5,14 +5,19 @@ import os
 
 app = FastAPI()
 
-# ★★★★★ ADD CORS HERE ★★★★★
+# Configure CORS
+allowed_origins = [
+    "https://ai-recon.vercel.app",  # Your frontend
+    "http://localhost:3000",         # Local development
+    "http://localhost:5173",         # Vite dev server
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],            # allow all origins (React, Postman, mobile apps)
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],            # GET, POST, PUT, DELETE, OPTIONS
-    allow_headers=["*"],            # Content-Type, Authorization, etc.
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# Your routes
 app.include_router(router, prefix="/api/v1")
