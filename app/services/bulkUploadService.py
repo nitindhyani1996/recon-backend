@@ -229,9 +229,6 @@ class BulkUploadService:
             "not_matched": int(df["not_matched"][0] or 0)
         }
     
-
-
-
     @staticmethod
     def getAtmTransactionsMatchingCount(db: Session):
 
