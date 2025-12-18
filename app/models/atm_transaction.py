@@ -6,7 +6,7 @@ class ATMTransaction(Base):
     __tablename__ = "atm_transactions"
 
     id = Column(BigInteger, primary_key=True, index=True, autoincrement=True)
-    datetime = Column(TIMESTAMP(timezone=True), nullable=True)
+    datetime = Column(TIMESTAMP(timezone=False), nullable=True)
     terminalid = Column(String(50), nullable=True)
     location = Column(String(255), nullable=True)
     atmindex = Column(String(50), nullable=True)

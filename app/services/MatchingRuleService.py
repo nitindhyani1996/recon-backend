@@ -1,4 +1,5 @@
 
+import datetime
 import json
 from locale import normalize
 from sqlalchemy.orm import Session
@@ -211,7 +212,7 @@ class MatchingRuleService:
                             break
 
                     # 🔹 STEP 3: AMOUNT TOLERANCE CHECK
-                    if switch_flex_ok and tolerance_cfg.get("allowAmountDiff") == "Y":
+                    if switch_flex_ok and tolerance_cfg.get("allowAmountDiff") == "N":
                         try:
                             atm_amt = float(atm_row.get("amount", 0) or 0)
                             flex_amt = float(flex_row.get("DR", 0) or 0)
@@ -364,6 +365,17 @@ class MatchingRuleService:
         db.refresh(record)
 
         return record
+    
+
+    def safe_datetime(value):
+        if value is None or value == "":
+            return None
+
+        if isinstance(value, datetime):
+            return value
+
+        # ATM file format: 12/1/2025 9:17
+        return datetime.strptime(value.strip(), "%m/%d/%Y %H:%M")
 
     
 

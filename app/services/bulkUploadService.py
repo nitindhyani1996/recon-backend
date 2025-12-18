@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, cast, String, select, text, union_all, case
 from sqlalchemy.orm import aliased
 import numpy as np
+from app.services.MatchingRuleService import MatchingRuleService
 
 class BulkUploadService:
     @staticmethod
@@ -34,7 +35,8 @@ class BulkUploadService:
                 "status": "error",
                 "message": str(e)
             }
-        
+
+
     @staticmethod
     async def saveATMFileData(db: Session, mapped_df, uploaded_file_id):
         duplicates = []
@@ -50,7 +52,7 @@ class BulkUploadService:
                 duplicates.append(row)
                 continue
             new_records.append(ATMTransaction(
-                datetime=row.get("datetime"),
+                datetime= (row.get("datetime") or "").strip() or None,
                 terminalid=(row.get("terminalid") or "").strip() or None,
                 location=(row.get("location") or "").strip() or None,
                 atmindex=(row.get("atmindex") or "").strip() or None,
@@ -69,7 +71,7 @@ class BulkUploadService:
 
 
             # new_records.append(ATMTransaction(
-            #     datetime=row["datetime"],
+            #     datetime= row["datetime"],
             #     terminalid=row["terminalid"],
             #     location=row["location"],
             #     atmindex=row["atmindex"],
@@ -112,25 +114,25 @@ class BulkUploadService:
             if existing_record:
                 duplicates.append(row)
                 continue
-            new_records.append(SwitchTransaction(datetime=row.get("datetime"), direction=(row.get("direction") or "").strip() or None, mti=(row.get("mti") or "").strip() or None, pan_masked=(row.get("pan_masked") or "").strip() or None, processingcode=(row.get("processingcode") or "").strip() or None, amountminor=row.get("amountminor") if row.get("amountminor") not in ("", None) else None, currency=(row.get("currency") or "").strip() or None, terminalid=(row.get("terminalid") or "").strip() or None, stan=(row.get("stan") or "").strip() or None, rrn=(row.get("rrn") or "").strip().replace(" ", "") or None, source=(row.get("source") or "").strip() or None, destination=(row.get("destination") or "").strip() or None, uploaded_by=uploaded_file_id))
+            # new_records.append(SwitchTransaction(datetime=row.get("datetime"), direction=(row.get("direction") or "").strip() or None, mti=(row.get("mti") or "").strip() or None, pan_masked=(row.get("pan_masked") or "").strip() or None, processingcode=(row.get("processingcode") or "").strip() or None, amountminor=row.get("amountminor") if row.get("amountminor") not in ("", None) else None, currency=(row.get("currency") or "").strip() or None, terminalid=(row.get("terminalid") or "").strip() or None, stan=(row.get("stan") or "").strip() or None, rrn=(row.get("rrn") or "").strip().replace(" ", "") or None, source=(row.get("source") or "").strip() or None, destination=(row.get("destination") or "").strip() or None, uploaded_by=uploaded_file_id))
 
-            # new_records.append(SwitchTransaction(
-            #     datetime=row["datetime"],
-            #     direction=row["direction"],
-            #     mti=row["mti"],
-            #     pan_masked=row["pan_masked"],
-            #     processingcode=row["processingcode"],
-            #     amountminor=row["amountminor"],
-            #     currency=row["currency"],
-            #     terminalid=row["terminalid"],
-            #     stan=row["stan"],
-            #     rrn=row["rrn"],
-            #     source=row["source"],
-            #     destination=row["destination"],
-            #     # responsecode=row["responsecode"],
-            #     # authid=row["authid"],
-            #     uploaded_by= uploaded_file_id,
-            # ))
+            new_records.append(SwitchTransaction(
+                datetime=row["datetime"],
+                direction=row["direction"],
+                mti=row["mti"],
+                pan_masked=row["pan_masked"],
+                processingcode=row["processingcode"],
+                amountminor=row["amountminor"],
+                currency=row["currency"],
+                terminalid=row["terminalid"],
+                stan=row["stan"],
+                rrn=row["rrn"],
+                source=row["source"],
+                destination=row["destination"],
+                # responsecode=row["responsecode"],
+                # authid=row["authid"],
+                uploaded_by= uploaded_file_id,
+            ))
 
         if new_records:
             db.add_all(new_records)
@@ -158,31 +160,31 @@ class BulkUploadService:
             if existing_record:
                 duplicates.append(row)
                 continue
-            new_records.append(FlexcubeTransaction(fc_txn_id=(row.get("fc_txn_id") or "").strip() or None, rrn=(row.get("rrn") or "").strip().replace(" ", "") or None, stan=(row.get("stan") or "").strip() or None, account_masked=(row.get("account_masked") or "").strip() or None, dr=row.get("dr") if row.get("dr") not in ("", None) else None, currency=(row.get("currency") or "").strip() or None, status=(row.get("status") or "").strip() or None, description=(row.get("description") or "").strip() or None, uploaded_by=uploaded_file_id))
+            # new_records.append(FlexcubeTransaction(fc_txn_id=(row.get("fc_txn_id") or "").strip() or None, rrn=(row.get("rrn") or "").strip().replace(" ", "") or None, stan=(row.get("stan") or "").strip() or None, account_masked=(row.get("account_masked") or "").strip() or None, dr=row.get("dr") if row.get("dr") not in ("", None) else None, currency=(row.get("currency") or "").strip() or None, status=(row.get("status") or "").strip() or None, description=(row.get("description") or "").strip() or None, uploaded_by=uploaded_file_id))
 
-            # new_records.append(FlexcubeTransaction(
-            #     # posted_datetime=row["posteddatetime"],
-            #     # fc_txn_id=row["fc_txn_id"],
-            #     # rrn=row["rrn"],
-            #     # stan=row["stan"],
-            #     # account_masked=row["account_masked"],
-            #     # dr=row["dr"],
-            #     # currency=row["currency"],
-            #     # status=row["status"],
-            #     # description=row["description"],
-            #     # # cr=row["cr"],
-            #     # uploaded_by= uploaded_file_id,
-            #     fc_txn_id = row["fc_txn_id"].strip() if row.get("fc_txn_id") else None
-            #     rrn= row["rrn"].strip() if row.get("rrn") else None
-            #     stan = row["stan"].strip() if row.get("stan") else None
-            #     account_masked = row["account_masked"].strip() if row.get("account_masked") else None
-            #     dr = row["dr"].strip() if row.get("dr") else None
-            #     currency = row["currency"].strip() if row.get("currency") else None
-            #     status = row["status"].strip() if row.get("status") else None
-            #     description = row["description"].strip() if row.get("description") else None
-            #     # row["cr"].strip() if row.get("cr") else None
-            #     uploaded_by= uploaded_file_id
-            # ))
+            new_records.append(FlexcubeTransaction(
+                posted_datetime=row["posteddatetime"],
+                fc_txn_id=row["fc_txn_id"],
+                rrn=row["rrn"],
+                stan=row["stan"],
+                account_masked=row["account_masked"],
+                dr=row["dr"],
+                currency=row["currency"],
+                status=row["status"],
+                description=row["description"],
+                # cr=row["cr"],
+                uploaded_by= uploaded_file_id,
+                # fc_txn_id = row["fc_txn_id"].strip() if row.get("fc_txn_id") else None
+                # rrn= row["rrn"].strip() if row.get("rrn") else None
+                # stan = row["stan"].strip() if row.get("stan") else None
+                # account_masked = row["account_masked"].strip() if row.get("account_masked") else None
+                # dr = row["dr"].strip() if row.get("dr") else None
+                # currency = row["currency"].strip() if row.get("currency") else None
+                # status = row["status"].strip() if row.get("status") else None
+                # description = row["description"].strip() if row.get("description") else None
+                # # row["cr"].strip() if row.get("cr") else None
+                # uploaded_by= uploaded_file_id
+            ))
 
         if new_records:
             db.add_all(new_records)
