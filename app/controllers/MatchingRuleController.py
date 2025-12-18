@@ -112,5 +112,9 @@ class MatchingRuleController:
                 "message": "Failed to fetch matching source fields",
                 "error": str(e)
             }
+    @staticmethod
+    def clearReconTables(db):
+        print('dsadsadas')
+        return MatchingRuleService.clear_recon_atm_transaction_summary(db)
         
     

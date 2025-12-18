@@ -42,11 +42,11 @@ class FileUpload:
             flexcube_index_found = any("fctxnid" in col for col in cols)
             fileType = {}        
             if mti_found:
-                fileType = {'fileType':"SWITCH","totalRecords":len(df),"validRecords":len(df), "invalidRecords":0, 'fileName':file.filename}
+                fileType = {'fileType':"SWITCH","source":2,"totalRecords":len(df),"validRecords":len(df), "invalidRecords":0, 'fileName':file.filename}
             elif atm_index_found:
-                fileType = {'fileType':"ATM","totalRecords":len(df),"validRecords":len(df), "invalidRecords":0, 'fileName':file.filename}
+                fileType = {'fileType':"ATM","source":1,"totalRecords":len(df),"validRecords":len(df), "invalidRecords":0, 'fileName':file.filename}
             elif flexcube_index_found:
-                fileType = {'fileType':"FLEXCUBE","totalRecords":len(df),"validRecords":len(df), "invalidRecords":0, 'fileName':file.filename}
+                fileType = {'fileType':"FLEXCUBE","source":3,"totalRecords":len(df),"validRecords":len(df), "invalidRecords":0, 'fileName':file.filename}
             
             if fileType:
                 save_result = await BulkUploadService.saveUploadedFile(db, fileType)

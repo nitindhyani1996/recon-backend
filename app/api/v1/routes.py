@@ -63,6 +63,10 @@ def updateMatchingRule(rule_id: int,data: dict = Body(...), db: Session = Depend
 async def getReconAtmTransactionsSummery(db:Session = Depends(get_db)):
     return await matchingRuleController.getReconAtmTransactionsSummery(db)
 
+@router.get("/clear-data")
+def clearReconTables(db:Session = Depends(get_db)):
+    return matchingRuleController.clearReconTables(db)
+
 
 
 

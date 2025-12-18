@@ -3,7 +3,7 @@ import datetime
 import json
 from locale import normalize
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, select
+from sqlalchemy import desc, select, text
 from app.enums.matching_source import MatchingSource
 from app.models.MatchingRule import MatchingRule
 from app.models.ReconMatchingSummary import ReconMatchingSummary
@@ -152,105 +152,124 @@ class MatchingRuleService:
         tolerance_cfg = matching_json.get("tolerance", {})
 
         def normalize(val):
-            """Normalize values for comparison"""
+            """Normalize values for exact comparison"""
             if val is None:
                 return ""
             return str(val).strip().upper()
 
+        def check_exact_match(row1, row2, field1, field2):
+            """Check if two fields match exactly"""
+            if not field1 and not field2:
+                return True  # Skip if field doesn't exist
+            return normalize(row1.get(field1)) == normalize(row2.get(field2))
+
+        def check_amount_tolerance(atm_row, flex_row):
+            """Check if amount is within tolerance"""
+            if tolerance_cfg.get("allowAmountDiff") == "Y":
+                return True
+                
+            try:
+                atm_amt = float(atm_row.get("amount", 0) or 0)
+                flex_amt = float(flex_row.get("DR", 0) or 0)
+                allowed_diff = float(tolerance_cfg.get("amountDiff", 0))
+                return abs(atm_amt - flex_amt) <= allowed_diff
+            except (ValueError, TypeError):
+                return False
+
+        def check_all_groups_match(row1, row2, source_field_key1, source_field_key2):
+            """Check if all matching groups match between two sources"""
+            for group in matching_groups:
+                fields = group.get("fields", [])
+                group_matched = True
+                
+                for f in fields:
+                    field1 = f.get(source_field_key1)
+                    field2 = f.get(source_field_key2)
+                    
+                    # Check if both fields exist and match
+                    if field1 and field2:
+                        if not check_exact_match(row1, row2, field1, field2):
+                            group_matched = False
+                            break
+                
+                # If any group fails, return False
+                if not group_matched:
+                    return False
+            
+            # All groups must match
+            return True
+
+        # Process each ATM row
         for atm_row in ATM_file:
             atm_matched = False
-            atm_partial = False
-            last_switch_row = None
+            best_partial_match = None
 
+            # Try to find matching Switch row
             for switch_row in Switch_file:
-                atm_switch_ok = True
+                # Check ATM ↔ SWITCH matching (fieldA ↔ fieldB)
+                atm_switch_match = check_all_groups_match(
+                    atm_row, switch_row, 
+                    "matching_fieldA", "matching_fieldB"
+                )
 
-                # 🔹 STEP 1: ATM ↔ SWITCH COMPARISON
-                for group in matching_groups:
-                    fields = group.get("fields", [])
-
-                    for f in fields:
-                        a = f.get("matching_fieldA")
-                        b = f.get("matching_fieldB")
-                        c = f.get("matching_fieldC")
-
-                        # Only compare A↔B if both A and B exist (and C doesn't)
-                        if a and b and not c:
-                            if normalize(atm_row.get(a)) != normalize(switch_row.get(b)):
-                                atm_switch_ok = False
-                                break
-
-                    if not atm_switch_ok:
-                        break
-
-                if not atm_switch_ok:
+                if not atm_switch_match:
                     continue
 
-                # ATM matched with Switch
-                atm_partial = True
-                last_switch_row = switch_row
-
-                # 🔹 STEP 2: SWITCH ↔ FLEXCUBE COMPARISON
+                # ATM matched with Switch, now try to match with Flexcube
+                flex_matched = False
+                
                 for flex_row in Flexcube_file:
-                    switch_flex_ok = True
+                    # Check SWITCH ↔ FLEXCUBE matching (fieldB ↔ fieldC)
+                    switch_flex_match = check_all_groups_match(
+                        switch_row, flex_row,
+                        "matching_fieldB", "matching_fieldC"
+                    )
 
-                    for group in matching_groups:
-                        fields = group.get("fields", [])
-
-                        for f in fields:
-                            b = f.get("matching_fieldB")
-                            c = f.get("matching_fieldC")
-                            a = f.get("matching_fieldA")
-
-                            # Only compare B↔C if both B and C exist (and A doesn't)
-                            if b and c and not a:
-                                if normalize(switch_row.get(b)) != normalize(flex_row.get(c)):
-                                    switch_flex_ok = False
-                                    break
-
-                        if not switch_flex_ok:
+                    # If SWITCH ↔ FLEXCUBE matched, check amount tolerance
+                    if switch_flex_match:
+                        if check_amount_tolerance(atm_row, flex_row):
+                            # ✅ FULL 3-WAY MATCH FOUND
+                            matched.append({
+                                "ATM": atm_row,
+                                "Switch": switch_row,
+                                "Flexcube": flex_row
+                            })
+                            atm_matched = True
+                            flex_matched = True
                             break
-
-                    # 🔹 STEP 3: AMOUNT TOLERANCE CHECK
-                    if switch_flex_ok and tolerance_cfg.get("allowAmountDiff") == "N":
-                        try:
-                            atm_amt = float(atm_row.get("amount", 0) or 0)
-                            flex_amt = float(flex_row.get("DR", 0) or 0)
-                            allowed_diff = float(tolerance_cfg.get("amountDiff", 0))
-
-                            if abs(atm_amt - flex_amt) > allowed_diff:
-                                switch_flex_ok = False
-                        except (ValueError, TypeError):
-                            switch_flex_ok = False
-
-                    # 🔹 FULL MATCH FOUND
-                    if switch_flex_ok:
-                        matched.append({
-                            "ATM": atm_row,
-                            "Switch": switch_row,
-                            "Flexcube": flex_row
-                        })
-                        atm_matched = True
-                        break
+                        else:
+                            # Amount tolerance failed, but other fields matched
+                            if not best_partial_match:
+                                best_partial_match = {
+                                    "ATM": atm_row,
+                                    "Switch": switch_row,
+                                    "Flexcube": flex_row,
+                                    "reason": "Amount tolerance exceeded"
+                                }
 
                 if atm_matched:
                     break
+                
+                # If ATM-Switch matched but no Flexcube match found
+                if not flex_matched and not best_partial_match:
+                    best_partial_match = {
+                        "ATM": atm_row,
+                        "Switch": switch_row,
+                        "Flexcube": None,
+                        "reason": "No matching Flexcube record"
+                    }
 
-            # 🔹 FINAL CLASSIFICATION
+            # Classify the ATM row
             if atm_matched:
-                continue
-
-            if atm_partial:
-                partially_matched.append({
-                    "ATM": atm_row,
-                    "Switch": last_switch_row,
-                    "Flexcube": None
-                })
+                continue  # Already added to matched
+            elif best_partial_match:
+                partially_matched.append(best_partial_match)
             else:
                 unmatched.append({
                     "ATM": atm_row,
                     "Switch": None,
-                    "Flexcube": None
+                    "Flexcube": None,
+                    "reason": "No matching Switch record"
                 })
 
         return {
@@ -376,6 +395,35 @@ class MatchingRuleService:
 
         # ATM file format: 12/1/2025 9:17
         return datetime.strptime(value.strip(), "%m/%d/%Y %H:%M")
+    
+    @staticmethod
+    def clear_recon_atm_transaction_summary(db: Session) -> dict:
+        try:
+            # deleted_rows = db.query(ATMTransaction).delete()
+            db.execute(text("""
+                TRUNCATE TABLE
+                    atm_transactions,
+                    flexcube_transactions,
+                    switch_transactions,
+                    recon_matching_summary,
+                    uploaded_files
+                RESTART IDENTITY CASCADE;
+            """))
+            db.commit()
+
+            return {
+                "success": True,
+                "message": "Data cleared successfully",
+            }
+
+        except Exception as e:
+            db.rollback()
+            return {
+                "success": False,
+                "message": "Failed to clear reconciliation data",
+                "error": str(e)
+            }
+
 
     
 
