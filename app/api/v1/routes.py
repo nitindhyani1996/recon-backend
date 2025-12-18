@@ -55,8 +55,8 @@ async def saveMarchingRule(db: Session = Depends(get_db), data: dict = Body(...)
 
 
 @router.put("/matching-rule/{rule_id}")
-async def updateMatchingRule(rule_id: int,data: dict = Body(...), db: Session = Depends(get_db)):
-    return await matchingRuleController.updateMatchingRule(db, rule_id, data)
+def updateMatchingRule(rule_id: int,data: dict = Body(...), db: Session = Depends(get_db)):
+    return matchingRuleController.updateMatchingRule(db, rule_id, data)
     
 # Atm matching API:
 @router.get("/recon-atm-matching")
