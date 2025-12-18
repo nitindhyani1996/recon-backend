@@ -1,4 +1,5 @@
 import asyncio
+from app.controllers.MatchingRuleController import MatchingRuleController
 from app.utils.file_reader import read_file_by_extension
 from app.utils.smart_column_mapper import SmartColumnMapper
 from app.services.bulkUploadService import BulkUploadService
@@ -55,13 +56,16 @@ class FileUpload:
                 if save_result['status'] == 'success':
                     if fileType['fileType'] == "ATM":
                         saveAtmResult = await BulkUploadService.saveATMFileData(db, normalized_data, save_result['insertedId'])
+                        await MatchingRuleController.runMatchingEngine(db)
                         return {"data": fileType,"result": saveAtmResult,  "message": "ATM file uploded"}
                     elif fileType['fileType'] == "SWITCH":
                         saveSwitchresult = await BulkUploadService.saveSwitchFileData(db, normalized_data, save_result['insertedId'])
+                        await MatchingRuleController.runMatchingEngine(db)
                         return {"data": fileType,"result": saveSwitchresult,  "message": "Switch file uploded"}
                     elif fileType['fileType'] == "FLEXCUBE":
                         saveSwitchresult = await BulkUploadService.saveFlexCubeFileData(db, normalized_data, save_result['insertedId'])
-                        return {"data": fileType,"result": saveSwitchresult,  "message": "Switch file uploded"}
+                        await MatchingRuleController.runMatchingEngine(db)
+                        return {"data": fileType,"result": saveSwitchresult,  "message": "Flec-cube file uploded"}
                     return { "message": "Not FOund"}
                 else:
                     return {"data": fileType,"result": save_result,  "message": "file uploded with errors"}

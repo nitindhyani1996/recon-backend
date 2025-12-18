@@ -1,5 +1,6 @@
 
 import json
+from locale import normalize
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, select
 from app.enums.matching_source import MatchingSource
@@ -113,62 +114,154 @@ class MatchingRuleService:
             } 
             for row in rows
         ]
+
+    def getMatchingRuleJson(db: Session, userId=10, category=1):
+        rows = (
+            db.query(MatchingRule)
+            .filter(
+                MatchingRule.added_by == str(userId),
+                MatchingRule.rule_category == str(category)
+            )
+            .order_by(MatchingRule.id.desc())
+            .limit(20)
+            .all()
+        )
+
+        return [
+            {
+                "id": row.id,
+                "basic_details": row.basic_details,
+                "classification": row.classification,
+                "rule_category": row.rule_category,
+                "matchcondition": row.matchcondition,
+                "tolerance": row.tolerance,
+                "added_by": row.added_by
+            }
+            for row in rows
+        ]
+
+
     
     async def match_three_way_async(ATM_file, Switch_file, Flexcube_file, matching_json):
         matched = []
         partially_matched = []
         unmatched = []
 
-        for group in matching_json["matchCondition"]["matchingGroups"]:
-            fields = group["source"]["fields"]
-            for atm_row in ATM_file:
-                found = False
-                for switch_row in Switch_file:
-                    atm_switch_match = True
+        matching_groups = matching_json["matchCondition"].get("matchingGroups", [])
+        tolerance_cfg = matching_json.get("tolerance", {})
+
+        def normalize(val):
+            """Normalize values for comparison"""
+            if val is None:
+                return ""
+            return str(val).strip().upper()
+
+        for atm_row in ATM_file:
+            atm_matched = False
+            atm_partial = False
+            last_switch_row = None
+
+            for switch_row in Switch_file:
+                atm_switch_ok = True
+
+                # 🔹 STEP 1: ATM ↔ SWITCH COMPARISON
+                for group in matching_groups:
+                    fields = group.get("fields", [])
+
                     for f in fields:
-                        a_field = f.get("matching_fieldA")
-                        b_field = f.get("matching_fieldB")
-                        c_field = f.get("matching_fieldC")
-                        cond = f["condition"]
+                        a = f.get("matching_fieldA")
+                        b = f.get("matching_fieldB")
+                        c = f.get("matching_fieldC")
 
-                        if a_field and b_field:
-                            val_a = atm_row.get(a_field)
-                            val_b = switch_row.get(b_field)
-                            if cond == "=" and val_a != val_b:
-                                atm_switch_match = False
-                            elif cond == ">=" and val_a < val_b:
-                                atm_switch_match = False
-
-                    if atm_switch_match:
-                        for flex_row in Flexcube_file:
-                            flex_match = True
-                            for f in fields:
-                                b_field = f.get("matching_fieldB")
-                                c_field = f.get("matching_fieldC")
-                                cond = f["condition"]
-
-                                if b_field and c_field:
-                                    val_b = switch_row.get(b_field)
-                                    val_c = flex_row.get(c_field)
-                                    if cond == "=" and val_b != val_c:
-                                        flex_match = False
-                                    elif cond == ">=" and val_b < val_c:
-                                        flex_match = False
-
-                            # Amount tolerance
-                            if matching_json["tolerance"]["allowAmountDiff"]:
-                                amount_diff = abs(atm_row.get("Amount", 0) - flex_row.get("DR", 0))
-                                if amount_diff > matching_json["tolerance"]["amountDiff"]:
-                                    flex_match = False
-
-                            if flex_match:
-                                matched.append({"ATM": atm_row, "Switch": switch_row, "Flexcube": flex_row})
-                                found = True
+                        # Only compare A↔B if both A and B exist (and C doesn't)
+                        if a and b and not c:
+                            if normalize(atm_row.get(a)) != normalize(switch_row.get(b)):
+                                atm_switch_ok = False
                                 break
-                if not found:
-                    partially_matched.append(atm_row)
 
-        return {"matched": matched, "partially_matched": partially_matched, "unmatched": unmatched}
+                    if not atm_switch_ok:
+                        break
+
+                if not atm_switch_ok:
+                    continue
+
+                # ATM matched with Switch
+                atm_partial = True
+                last_switch_row = switch_row
+
+                # 🔹 STEP 2: SWITCH ↔ FLEXCUBE COMPARISON
+                for flex_row in Flexcube_file:
+                    switch_flex_ok = True
+
+                    for group in matching_groups:
+                        fields = group.get("fields", [])
+
+                        for f in fields:
+                            b = f.get("matching_fieldB")
+                            c = f.get("matching_fieldC")
+                            a = f.get("matching_fieldA")
+
+                            # Only compare B↔C if both B and C exist (and A doesn't)
+                            if b and c and not a:
+                                if normalize(switch_row.get(b)) != normalize(flex_row.get(c)):
+                                    switch_flex_ok = False
+                                    break
+
+                        if not switch_flex_ok:
+                            break
+
+                    # 🔹 STEP 3: AMOUNT TOLERANCE CHECK
+                    if switch_flex_ok and tolerance_cfg.get("allowAmountDiff") == "Y":
+                        try:
+                            atm_amt = float(atm_row.get("amount", 0) or 0)
+                            flex_amt = float(flex_row.get("DR", 0) or 0)
+                            allowed_diff = float(tolerance_cfg.get("amountDiff", 0))
+
+                            if abs(atm_amt - flex_amt) > allowed_diff:
+                                switch_flex_ok = False
+                        except (ValueError, TypeError):
+                            switch_flex_ok = False
+
+                    # 🔹 FULL MATCH FOUND
+                    if switch_flex_ok:
+                        matched.append({
+                            "ATM": atm_row,
+                            "Switch": switch_row,
+                            "Flexcube": flex_row
+                        })
+                        atm_matched = True
+                        break
+
+                if atm_matched:
+                    break
+
+            # 🔹 FINAL CLASSIFICATION
+            if atm_matched:
+                continue
+
+            if atm_partial:
+                partially_matched.append({
+                    "ATM": atm_row,
+                    "Switch": last_switch_row,
+                    "Flexcube": None
+                })
+            else:
+                unmatched.append({
+                    "ATM": atm_row,
+                    "Switch": None,
+                    "Flexcube": None
+                })
+
+        return {
+            "matched": matched,
+            "partially_matched": partially_matched,
+            "unmatched": unmatched
+        }
+
+
+
+
+
     
 
     def saveReconMatchingSummary(db: Session, reconMatchingData, ref_no):
@@ -225,7 +318,7 @@ class MatchingRuleService:
             basic_details=data.get("basic"),
             classification=data.get("classification"),
             rule_category=data.get("rule_category"),
-            matchcondition=data.get("matchcondition"),
+            matchcondition=data.get("matchCondition"),
             tolerance=data.get("tolerance"),
             added_by=str(data.get("added_by", 10))  # default to "10" if not provided
         )
@@ -237,23 +330,33 @@ class MatchingRuleService:
         return record
     
 
-    async def updateMatchingRule(db: Session, rule_id: int, data: dict):
-        # Find the record by id
-        record = db.query(MatchingRule).filter(MatchingRule.id == rule_id).first()
+    @staticmethod
+    def updateMatchingRule(db: Session, rule_id: int, data: dict):
+        record = (
+            db.query(MatchingRule)
+            .filter(MatchingRule.id == rule_id)
+            .first()
+        )
+
         if not record:
             return None
 
-        # Update fields if they exist in data
+        # Update fields safely
         if "basic" in data:
             record.basic_details = data["basic"]
+
         if "classification" in data:
             record.classification = data["classification"]
+
         if "rule_category" in data:
-            record.rule_category = data["rule_category"]
+            record.rule_category = str(data["rule_category"])
+
         if "matchCondition" in data:
-            record.match_condition = data["matchCondition"]
+            record.matchcondition = data["matchCondition"]  # ✔️ FIXED NAME
+
         if "tolerance" in data:
             record.tolerance = data["tolerance"]
+
         if "added_by" in data:
             record.added_by = str(data["added_by"])
 

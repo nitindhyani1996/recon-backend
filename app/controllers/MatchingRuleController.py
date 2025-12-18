@@ -30,36 +30,30 @@ class MatchingRuleController:
             atm_data = MatchingRuleService.getAllAtmTransactions(db)
             switch_data = MatchingRuleService.getAllSwitchTransactions(db)
             flex_cube_data = MatchingRuleService.getAllFlexcubeTransactions(db)
-            matching_json = {
-                "matchCondition": {
-                    "matchingGroups": [
-                        {
-                            "groupId": "1",
-                            "source": {
-                                "sourceA": "ATM_file",
-                                "sourceB": "Switch_file",
-                                "sourceC": "Flexcube_file",
-                                "fields": [
-                                    {"matching_fieldA": "RRN", "matching_fieldB": "RRN", "condition": "="},
-                                    {"matching_fieldB": "RRN", "matching_fieldC": "RRN", "condition": "="}
-                                ]
-                            }
-                        }
-                    ]
-                },
-                "tolerance": {"allowAmountDiff": "Y", "amountDiff": 10}
-            }
 
-            reconMatchingData = await MatchingRuleService.match_three_way_async(atm_data,switch_data,flex_cube_data,matching_json)
-            # ref_no = f"RECON{''.join(__import__('random').choices('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', k=2))}{__import__('datetime').datetime.now().strftime('%d%m%y')}"
-            ref_no = "RECONfZ161225"
-            result = MatchingRuleService.saveReconMatchingSummary(db,reconMatchingData,ref_no)
-            return {
-                "success": True,
-                "status_code": 200,
-                "message": "Matching Data save successfully",
-                "data": result
-            }
+            if atm_data and switch_data and flex_cube_data:
+                get_Matching_json = MatchingRuleService.getMatchingRuleJson(db,userId=10,category=1)
+                matching_json = {
+                    "matchCondition": get_Matching_json[0]['matchcondition'],
+                    "tolerance": get_Matching_json[0]['tolerance']
+                }
+                reconMatchingData = await MatchingRuleService.match_three_way_async(atm_data,switch_data,flex_cube_data,matching_json)
+                # ref_no = f"RECON{''.join(__import__('random').choices('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', k=2))}{__import__('datetime').datetime.now().strftime('%d%m%y')}"
+                ref_no = "RECONfZ161225"
+                result = MatchingRuleService.saveReconMatchingSummary(db,reconMatchingData,ref_no)
+                return {
+                    "success": True,
+                    "status_code": 200,
+                    "message": "Matching Data save successfully.",
+                    "data": result
+                }
+            else:
+                return {
+                    "success": False,
+                    "status_code": 400,
+                    "message": "Kindly upload all required files.",
+                    "data": []
+                }
         except Exception as e:
             logging.exception("Error while save Matching transactions")
             return {
@@ -80,12 +74,21 @@ class MatchingRuleController:
         }
     
     @staticmethod
-    async def updateMatchingRule(db,rule_id, data):
-        result = MatchingRuleService.updateMatchingRule(db,rule_id,data)
+    def updateMatchingRule(db, rule_id: int, data: dict):
+        result = MatchingRuleService.updateMatchingRule(db, rule_id, data)
+
+        if not result:
+            return {
+                "success": False,
+                "status_code": 404,
+                "message": "Matching Rule not found",
+                "data": None
+            }
+
         return {
             "success": True,
             "status_code": 200,
-            "message": "Matching Rule Update Successfully",
+            "message": "Matching Rule updated successfully",
             "data": result
         }
 
