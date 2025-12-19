@@ -89,7 +89,7 @@ class TransactionInvestigationService:
                 "auth_id": txn.authid,
                 "card_number": txn.pan_masked,
                 "direction": txn.direction,
-                "amountminor": float(txn.amountminor) if txn.amountminor is not None else None,
+                # "amountminor": float(txn.amountminor) if txn.amountminor is not None else None,
                 "created_at": txn.created_at.isoformat() if getattr(txn, "created_at", None) else None
             }
 
