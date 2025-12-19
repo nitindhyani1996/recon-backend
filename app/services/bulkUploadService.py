@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, cast, String, select, text, union_all, case
 from sqlalchemy.orm import aliased
 import numpy as np
-from app.services.MatchingRuleService import MatchingRuleService
+from app.utils.file_reader import parse_datetime
 
 class BulkUploadService:
     @staticmethod
@@ -51,21 +51,27 @@ class BulkUploadService:
             if existing_record:
                 duplicates.append(row)
                 continue
+            
+            # Handle both 'datetime' and 'transactiondatetime' column names
+            datetime_value = row.get("datetime") or row.get("transactiondatetime")
+            # Parse the datetime string to a proper datetime object
+            parsed_datetime = parse_datetime(datetime_value) if datetime_value else None
+            
             new_records.append(ATMTransaction(
-                datetime= (row.get("datetime") or "").strip() or None,
+                datetime=parsed_datetime,
                 terminalid=(row.get("terminalid") or "").strip() or None,
                 location=(row.get("location") or "").strip() or None,
                 atmindex=(row.get("atmindex") or "").strip() or None,
-                pan_masked=(row.get("pan_masked") or "").strip() or None,
-                account_masked=(row.get("account_masked") or "").strip() or None,
+                pan_masked=(row.get("pan_masked") or row.get("panmasked") or "").strip() or None,
+                account_masked=(row.get("account_masked") or row.get("accountmasked") or "").strip() or None,
                 transactiontype=(row.get("transactiontype") or "").strip() or None,
                 amount=row.get("amount") if row.get("amount") not in ("", None) else None,
                 currency=(row.get("currency") or "").strip() or None,
                 stan=(row.get("stan") or "").strip() or None,
                 rrn=(row.get("rrn") or "").strip().replace(" ", "") or None,
                 auth=(row.get("auth") or "").strip() or None,
-                responsecode=(row.get("responsecode") or "").strip() or None,
-                responsedesc=(row.get("responsedesc") or "").strip() or None,
+                responsecode=(row.get("responsecode") or row.get("response_code") or "").strip() or None,
+                responsedesc=(row.get("responsedesc") or row.get("response_desc") or "").strip() or None,
                 uploaded_by=uploaded_file_id
             ))
 
@@ -114,7 +120,11 @@ class BulkUploadService:
             if existing_record:
                 duplicates.append(row)
                 continue
-            # new_records.append(SwitchTransaction(datetime=row.get("datetime"), direction=(row.get("direction") or "").strip() or None, mti=(row.get("mti") or "").strip() or None, pan_masked=(row.get("pan_masked") or "").strip() or None, processingcode=(row.get("processingcode") or "").strip() or None, amountminor=row.get("amountminor") if row.get("amountminor") not in ("", None) else None, currency=(row.get("currency") or "").strip() or None, terminalid=(row.get("terminalid") or "").strip() or None, stan=(row.get("stan") or "").strip() or None, rrn=(row.get("rrn") or "").strip().replace(" ", "") or None, source=(row.get("source") or "").strip() or None, destination=(row.get("destination") or "").strip() or None, uploaded_by=uploaded_file_id))
+            
+            # Parse datetime string to proper datetime object
+            parsed_datetime = parse_datetime(row.get("datetime")) if row.get("datetime") else None
+            
+            new_records.append(SwitchTransaction(datetime=parsed_datetime, direction=(row.get("direction") or "").strip() or None, mti=(row.get("mti") or "").strip() or None, pan_masked=(row.get("pan_masked") or "").strip() or None, processingcode=(row.get("processingcode") or "").strip() or None, amountminor=row.get("amountminor") if row.get("amountminor") not in ("", None) else None, currency=(row.get("currency") or "").strip() or None, terminalid=(row.get("terminalid") or "").strip() or None, stan=(row.get("stan") or "").strip() or None, rrn=(row.get("rrn") or "").strip().replace(" ", "") or None, source=(row.get("source") or "").strip() or None, destination=(row.get("destination") or "").strip() or None, uploaded_by=uploaded_file_id))
 
             new_records.append(SwitchTransaction(
                 datetime=row["datetime"],
@@ -152,15 +162,54 @@ class BulkUploadService:
         new_records = []
         # print('mapped_df',mapped_df)
         for row in mapped_df:
+            # Columns are normalized to lowercase: fctxnid, rrn, dr, cr, transactiondatetime
+            fc_txn_id = (row.get("fctxnid") or row.get("fc_txn_id") or "").strip() or None
+            
             existing_record = db.query(FlexcubeTransaction).filter(
-                # ATMTransaction.rrn == row["rrn"],
-                FlexcubeTransaction.fc_txn_id == row["fc_txn_id"]
+                FlexcubeTransaction.fc_txn_id == fc_txn_id
             ).first()
             
             if existing_record:
                 duplicates.append(row)
                 continue
-            # new_records.append(FlexcubeTransaction(fc_txn_id=(row.get("fc_txn_id") or "").strip() or None, rrn=(row.get("rrn") or "").strip().replace(" ", "") or None, stan=(row.get("stan") or "").strip() or None, account_masked=(row.get("account_masked") or "").strip() or None, dr=row.get("dr") if row.get("dr") not in ("", None) else None, currency=(row.get("currency") or "").strip() or None, status=(row.get("status") or "").strip() or None, description=(row.get("description") or "").strip() or None, uploaded_by=uploaded_file_id))
+            
+            # Handle DR and CR amounts (can be string, float, or empty)
+            dr_value = row.get("dr")
+            if dr_value == "" or dr_value is None or str(dr_value).strip() == "":
+                dr_value = None
+            else:
+                try:
+                    dr_value = float(dr_value)
+                except (ValueError, TypeError):
+                    dr_value = None
+                    
+            cr_value = row.get("cr")
+            if cr_value == "" or cr_value is None or str(cr_value).strip() == "":
+                cr_value = None
+            else:
+                try:
+                    cr_value = float(cr_value)
+                except (ValueError, TypeError):
+                    cr_value = None
+            
+            # Parse datetime from various column names
+            datetime_value = (row.get("posted_datetime") or row.get("posteddatetime") or 
+                             row.get("transactiondatetime") or row.get("datetime"))
+            parsed_datetime = parse_datetime(datetime_value) if datetime_value else None
+            
+            new_records.append(FlexcubeTransaction(
+                fc_txn_id=fc_txn_id, 
+                rrn=(row.get("rrn") or "").strip().replace(" ", "") or None, 
+                stan=(row.get("stan") or "").strip() or None, 
+                account_masked=(row.get("account_masked") or row.get("accountmasked") or "").strip() or None, 
+                dr=dr_value,
+                cr=cr_value,
+                currency=(row.get("currency") or "").strip() or None, 
+                status=(row.get("status") or "").strip() or None, 
+                description=(row.get("description") or "").strip() or None,
+                posted_datetime=parsed_datetime,
+                uploaded_by=uploaded_file_id
+            ))
 
             new_records.append(FlexcubeTransaction(
                 posted_datetime=row["posteddatetime"],

@@ -3,7 +3,7 @@ import datetime
 import json
 from locale import normalize
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, select
+from sqlalchemy import desc, select, text
 from app.enums.matching_source import MatchingSource
 from app.models.MatchingRule import MatchingRule
 from app.models.ReconMatchingSummary import ReconMatchingSummary
@@ -43,7 +43,7 @@ class MatchingRuleService:
         
     @staticmethod
     def getAllAtmTransactions(db: Session):
-        rows = db.query(ATMTransaction).limit(20).all()  # simpler than db.execute
+        rows = db.query(ATMTransaction).all()  # simpler than db.execute
         return [
             {
                 "id": row.id,
@@ -70,7 +70,7 @@ class MatchingRuleService:
     
     @staticmethod
     def getAllSwitchTransactions(db: Session):
-        rows = db.query(SwitchTransaction).limit(20).all()
+        rows = db.query(SwitchTransaction).all()
         return [
             {
                 "id": row.id,
@@ -97,7 +97,7 @@ class MatchingRuleService:
 
     @staticmethod
     def getAllFlexcubeTransactions(db: Session):
-        rows = db.query(FlexcubeTransaction).limit(20).all()
+        rows = db.query(FlexcubeTransaction).all()
         return [
             {
                 "id": row.id,
@@ -106,6 +106,8 @@ class MatchingRuleService:
                 "rrn": row.rrn,
                 "stan": row.stan,
                 "account_masked": row.account_masked,
+                "dr": float(row.dr) if row.dr else None,
+                "cr": float(row.cr) if row.cr else None,
                 "currency": row.currency,
                 "status": row.status,
                 "description": row.description,
@@ -121,10 +123,9 @@ class MatchingRuleService:
             db.query(MatchingRule)
             .filter(
                 MatchingRule.added_by == str(userId),
-                MatchingRule.rule_category == str(category)
+                MatchingRule.rule_category == category  # Use integer comparison, not string
             )
             .order_by(MatchingRule.id.desc())
-            .limit(20)
             .all()
         )
 
@@ -148,7 +149,7 @@ class MatchingRuleService:
         partially_matched = []
         unmatched = []
 
-        matching_groups = matching_json["matchCondition"].get("matchingGroups", [])
+        matching_groups = matching_json.get("matchcondition", {}).get("matchingGroups", [])
         tolerance_cfg = matching_json.get("tolerance", {})
 
         def normalize(val):
@@ -174,8 +175,8 @@ class MatchingRuleService:
                         b = f.get("matching_fieldB")
                         c = f.get("matching_fieldC")
 
-                        # Only compare A↔B if both A and B exist (and C doesn't)
-                        if a and b and not c:
+                        # Compare A↔B if both exist
+                        if a and b:
                             if normalize(atm_row.get(a)) != normalize(switch_row.get(b)):
                                 atm_switch_ok = False
                                 break
@@ -200,11 +201,13 @@ class MatchingRuleService:
                         for f in fields:
                             b = f.get("matching_fieldB")
                             c = f.get("matching_fieldC")
-                            a = f.get("matching_fieldA")
 
-                            # Only compare B↔C if both B and C exist (and A doesn't)
-                            if b and c and not a:
-                                if normalize(switch_row.get(b)) != normalize(flex_row.get(c)):
+                            # Compare B↔C if both exist
+                            if b and c:
+                                switch_val = normalize(switch_row.get(b))
+                                flex_val = normalize(flex_row.get(c))
+                                
+                                if switch_val != flex_val:
                                     switch_flex_ok = False
                                     break
 
@@ -215,7 +218,7 @@ class MatchingRuleService:
                     if switch_flex_ok and tolerance_cfg.get("allowAmountDiff") == "N":
                         try:
                             atm_amt = float(atm_row.get("amount", 0) or 0)
-                            flex_amt = float(flex_row.get("DR", 0) or 0)
+                            flex_amt = float(flex_row.get("dr", 0) or 0)  # Fixed: lowercase 'dr'
                             allowed_diff = float(tolerance_cfg.get("amountDiff", 0))
 
                             if abs(atm_amt - flex_amt) > allowed_diff:
@@ -266,6 +269,8 @@ class MatchingRuleService:
     
 
     def saveReconMatchingSummary(db: Session, reconMatchingData, ref_no):
+        from app.utils.recon_data_formatter import ReconDataFormatter
+        
         result = db.execute(
             select(ReconMatchingSummary)
             .where(ReconMatchingSummary.recon_reference_number == ref_no)
@@ -273,23 +278,76 @@ class MatchingRuleService:
 
         record = result.scalar_one_or_none()
 
-        matched_json = json.dumps(reconMatchingData["matched"],default=str)
-        partially_json = json.dumps(reconMatchingData["partially_matched"],default=str)
-        unmatched_json = json.dumps(reconMatchingData["unmatched"],default=str)
+        # Convert matching results to CSV format for efficient storage
+        def safe_amount(value):
+            """Safely convert amount to string, handling None and empty values"""
+            if value is None or value == "" or str(value).strip() == "None":
+                return "0.00"
+            try:
+                return str(float(value))
+            except (ValueError, TypeError):
+                return "0.00"
+        
+        matched_transactions = []
+        for match in reconMatchingData.get("matched", []):
+            atm = match.get("ATM", {})
+            matched_transactions.append({
+                "rrn": atm.get("rrn") or "",
+                "txn_type": atm.get("transactiontype") or atm.get("transaction_type") or "",
+                "terminal_id": atm.get("terminalid") or atm.get("terminal_id") or "",
+                "date": str(atm.get("datetime") or atm.get("transaction_datetime") or ""),
+                "amount": safe_amount(atm.get("amount")),
+                "result": "MATCHED"
+            })
+        
+        partially_transactions = []
+        for match in reconMatchingData.get("partially_matched", []):
+            atm = match.get("ATM", {})
+            
+            # Debug: Check what datetime value we have
+            datetime_val = atm.get("datetime")
+            if datetime_val is None:
+                print(f"WARNING: ATM datetime is None for RRN {atm.get('rrn')}")
+            
+            partially_transactions.append({
+                "rrn": atm.get("rrn") or "",
+                "txn_type": atm.get("transactiontype") or atm.get("transaction_type") or "",
+                "terminal_id": atm.get("terminalid") or atm.get("terminal_id") or "",
+                "date": str(atm.get("datetime") or atm.get("transaction_datetime") or ""),
+                "amount": safe_amount(atm.get("amount")),
+                "result": "PARTIAL"
+            })
+        
+        unmatched_transactions = []
+        for match in reconMatchingData.get("unmatched", []):
+            atm = match.get("ATM", {})
+            unmatched_transactions.append({
+                "rrn": atm.get("rrn") or "",
+                "txn_type": atm.get("transactiontype") or atm.get("transaction_type") or "",
+                "terminal_id": atm.get("terminalid") or atm.get("terminal_id") or "",
+                "date": str(atm.get("datetime") or atm.get("transaction_datetime") or ""),
+                "amount": safe_amount(atm.get("amount")),
+                "result": "UNMATCHED"
+            })
+        
+        # Format as CSV
+        matched_csv = ReconDataFormatter.format_matched_data_csv(matched_transactions)
+        partially_csv = ReconDataFormatter.format_matched_data_csv(partially_transactions)
+        unmatched_csv = ReconDataFormatter.format_matched_data_csv(unmatched_transactions)
 
         if record:
             # UPDATE
-            record.matched = matched_json
-            record.partially_matched = partially_json
-            record.un_matched = unmatched_json
+            record.matched = matched_csv
+            record.partially_matched = partially_csv
+            record.un_matched = unmatched_csv
             record.added_by = 10
         else:
             # INSERT
             record = ReconMatchingSummary(
                 recon_reference_number=ref_no,
-                matched=matched_json,
-                partially_matched=partially_json,
-                un_matched=unmatched_json,
+                matched=matched_csv,
+                partially_matched=partially_csv,
+                un_matched=unmatched_csv,
                 added_by=10
             )
             db.add(record)
@@ -300,13 +358,43 @@ class MatchingRuleService:
         return record
     
     def getReconAtmTransactionsSummery(db: Session):
+        from app.utils.recon_data_formatter import ReconDataFormatter
+        
         result = db.execute(
             select(ReconMatchingSummary)
             .order_by(desc(ReconMatchingSummary.id))
             .limit(1)
         )
 
-        return result.scalar_one_or_none()
+        summary = result.scalar_one_or_none()
+        
+        if not summary:
+            return None
+        
+        # Convert CSV data to frontend format
+        matched_data = ReconDataFormatter.get_frontend_format(summary.matched or "")
+        print(matched_data)
+        partially_matched_data = ReconDataFormatter.get_frontend_format(summary.partially_matched or "")
+        print(partially_matched_data)
+        unmatched_data = ReconDataFormatter.get_frontend_format(summary.un_matched or "")
+        print(unmatched_data)
+
+        return {
+            "recon_reference_number": summary.recon_reference_number,
+            "created_at": summary.created_at.isoformat() if summary.created_at else None,
+            "updated_at": summary.updated_at.isoformat() if summary.updated_at else None,
+            "data": {
+                "matched": matched_data,
+                "partially_matched": partially_matched_data,
+                "unmatched": unmatched_data
+            },
+            "summary": {
+                "total_matched": len(matched_data),
+                "total_partial": len(partially_matched_data),
+                "total_unmatched": len(unmatched_data),
+                "total": len(matched_data) + len(partially_matched_data) + len(unmatched_data)
+            }
+        }
     
     def saveMatchingRule(db: Session, reconMatchingData):
         # If reconMatchingData is a Pydantic model, convert to dict
@@ -378,5 +466,31 @@ class MatchingRuleService:
         return datetime.strptime(value.strip(), "%m/%d/%Y %H:%M")
 
     
+    @staticmethod
+    def clear_recon_atm_transaction_summary(db: Session) -> dict:
+        try:
+            # deleted_rows = db.query(ATMTransaction).delete()
+            db.execute(text("""
+                TRUNCATE TABLE
+                    atm_transactions,
+                    flexcube_transactions,
+                    switch_transactions,
+                    recon_matching_summary,
+                    uploaded_files
+                RESTART IDENTITY CASCADE;
+            """))
+            db.commit()
 
+            return {
+                "success": True,
+                "message": "Data cleared successfully",
+            }
+
+        except Exception as e:
+            db.rollback()
+            return {
+                "success": False,
+                "message": "Failed to clear reconciliation data",
+                "error": str(e)
+            }
     
