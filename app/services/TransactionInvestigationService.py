@@ -86,27 +86,25 @@ class TransactionInvestigationService:
             for txn in transactions:
                 txn_data = {
                     "rrn": txn.rrn,
-                    "amount": float(txn.amount_minor) if txn.amount_minor else None,
-                    "date": txn.transaction_datetime.isoformat() if txn.transaction_datetime else None,
+                    "amount": float(txn.amountminor) if txn.amountminor else None,
+                    "date": txn.datetime.isoformat() if txn.datetime else None,
                     "mti": txn.mti,
-                    "processing_code": txn.processing_code,
+                    "processing_code": txn.processingcode,
                     "stan": txn.stan,
-                    "transaction_time": txn.transaction_time,
-                    "settlement_date": txn.settlement_date,
-                    "acquiring_institution_code": txn.acquiring_institution_code,
-                    "forwarding_institution_code": txn.forwarding_institution_code,
-                    "card_acceptor_terminal_id": txn.card_acceptor_terminal_id,
-                    "card_acceptor_id_code": txn.card_acceptor_id_code,
-                    "currency_code": txn.currency_code_transaction,
-                    "response_code": txn.response_code,
+                    "terminal_id": txn.terminalid,
+                    "source": txn.source,
+                    "destination": txn.destination,
+                    "currency_code": txn.currency,
+                    "response_code": txn.responsecode,
+                    "auth_id": txn.authid,
                     "card_number": txn.pan_masked,
-                    "txn_type": txn.txn_type,
+                    "direction": txn.direction,
                     "created_at": txn.created_at.isoformat() if hasattr(txn, 'created_at') and txn.created_at else None
                 }
 
-                if txn.txn_type and txn.txn_type.upper() == 'INBOUND':
+                if txn.direction and txn.direction.upper() == 'INBOUND':
                     inbound = txn_data
-                elif txn.txn_type and txn.txn_type.upper() == 'OUTBOUND':
+                elif txn.direction and txn.direction.upper() == 'OUTBOUND':
                     outbound = txn_data
 
             return {

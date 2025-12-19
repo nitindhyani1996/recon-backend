@@ -89,8 +89,13 @@ async def get_switch_transaction_by_rrn(rrn: str, db: Session = Depends(get_db))
 @router.get("/cbs/transaction/{rrn}")
 async def get_cbs_transaction_by_rrn(rrn: str, db: Session = Depends(get_db)):
     """Get CBS/Flexcube transaction data by RRN"""
-    return await transactionInvestigationController.get_cbs_transaction_by_rrn(db, rrn)
+    return await transactio
 
+@router.get("/clear-data")
+def clearReconTables(db:Session = Depends(get_db)):
+    return matchingRuleController.clearReconTables(db)
+
+    
 
 @router.get("/db-test")
 def db_test(db: Session = Depends(get_db)):

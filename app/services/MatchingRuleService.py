@@ -2,7 +2,7 @@
 import json
 from locale import normalize
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, select
+from sqlalchemy import desc, select, text
 from app.enums.matching_source import MatchingSource
 from app.models.MatchingRule import MatchingRule
 from app.models.ReconMatchingSummary import ReconMatchingSummary
@@ -302,6 +302,12 @@ class MatchingRuleService:
         partially_transactions = []
         for match in reconMatchingData.get("partially_matched", []):
             atm = match.get("ATM", {})
+            
+            # Debug: Check what datetime value we have
+            datetime_val = atm.get("datetime")
+            if datetime_val is None:
+                print(f"WARNING: ATM datetime is None for RRN {atm.get('rrn')}")
+            
             partially_transactions.append({
                 "rrn": atm.get("rrn") or "",
                 "txn_type": atm.get("transactiontype") or atm.get("transaction_type") or "",
@@ -448,5 +454,31 @@ class MatchingRuleService:
         return record
 
     
+    @staticmethod
+    def clear_recon_atm_transaction_summary(db: Session) -> dict:
+        try:
+            # deleted_rows = db.query(ATMTransaction).delete()
+            db.execute(text("""
+                TRUNCATE TABLE
+                    atm_transactions,
+                    flexcube_transactions,
+                    switch_transactions,
+                    recon_matching_summary,
+                    uploaded_files
+                RESTART IDENTITY CASCADE;
+            """))
+            db.commit()
 
+            return {
+                "success": True,
+                "message": "Data cleared successfully",
+            }
+
+        except Exception as e:
+            db.rollback()
+            return {
+                "success": False,
+                "message": "Failed to clear reconciliation data",
+                "error": str(e)
+            }
     

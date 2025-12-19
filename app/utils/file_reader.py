@@ -44,3 +44,58 @@ async def read_file_by_extension(file):
         "columns": columns,
         "data": data
     }
+
+
+def parse_datetime(date_string):
+    """
+    Parse various date/datetime formats from CSV files.
+    Supports formats like:
+    - 01/11/2025  11:58:00
+    - 01/11/2025 11:58:00
+    - 2025-11-01 11:58:00
+    - 01-11-2025 11:58:00
+    - 2025/11/01 11:58:00
+    etc.
+    """
+    from datetime import datetime
+    
+    if not date_string or date_string == "" or str(date_string).strip() == "":
+        return None
+    
+    # Clean up the string - remove extra spaces
+    date_string = str(date_string).strip()
+    
+    # Common date format patterns to try
+    formats = [
+        "%d/%m/%Y %H:%M:%S",      # 01/11/2025  11:58:00 or 01/11/2025 11:58:00
+        "%d/%m/%Y  %H:%M:%S",     # 01/11/2025  11:58:00 (double space)
+        "%d/%m/%Y %I:%M:%S %p",   # 01/11/2025 11:58:00 AM
+        "%Y-%m-%d %H:%M:%S",      # 2025-11-01 11:58:00
+        "%d-%m-%Y %H:%M:%S",      # 01-11-2025 11:58:00
+        "%Y/%m/%d %H:%M:%S",      # 2025/11/01 11:58:00
+        "%d/%m/%Y",               # 01/11/2025 (date only)
+        "%Y-%m-%d",               # 2025-11-01 (date only)
+        "%d-%m-%Y",               # 01-11-2025 (date only)
+        "%Y/%m/%d",               # 2025/11/01 (date only)
+        "%d/%m/%Y %H:%M",         # 01/11/2025 11:58
+        "%Y-%m-%d %H:%M",         # 2025-11-01 11:58
+    ]
+    
+    for fmt in formats:
+        try:
+            return datetime.strptime(date_string, fmt)
+        except ValueError:
+            continue
+    
+    # If nothing worked, try pandas to_datetime as a fallback
+    try:
+        import pandas as pd
+        parsed = pd.to_datetime(date_string, errors='coerce')
+        if pd.notna(parsed):
+            return parsed.to_pydatetime()
+    except:
+        pass
+    
+    # If all else fails, return None and log a warning
+    print(f"Warning: Could not parse date string: '{date_string}'")
+    return None

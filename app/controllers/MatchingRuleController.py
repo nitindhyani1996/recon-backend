@@ -44,14 +44,15 @@ class MatchingRuleController:
                     }
                 
                 matching_json = {
-                    "matchCondition": get_Matching_json[0]['matchcondition'],
+                    "matchcondition": get_Matching_json[0]['matchcondition'],  # Fixed: lowercase to match service
                     "tolerance": get_Matching_json[0]['tolerance']
                 }
                 reconMatchingData = await MatchingRuleService.match_three_way_async(atm_data,switch_data,flex_cube_data,matching_json)
                 print("Recon Matching Data Length:", len(reconMatchingData))
-                # exit()
-                # ref_no = f"RECON{''.join(__import__('random').choices('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', k=2))}{__import__('datetime').datetime.now().strftime('%d%m%y')}"
-                ref_no = "RECONfZ161225"
+                # Generate unique reference number for each matching run
+                import random
+                import datetime
+                ref_no = f"RECON{''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', k=2))}{datetime.datetime.now().strftime('%d%m%y')}"
                 result = MatchingRuleService.saveReconMatchingSummary(db,reconMatchingData,ref_no)
                 return {
                     "success": True,
@@ -124,5 +125,9 @@ class MatchingRuleController:
                 "message": "Failed to fetch matching source fields",
                 "error": str(e)
             }
+        
+    @staticmethod
+    def clearReconTables(db):
+        return MatchingRuleService.clear_recon_atm_transaction_summary(db)
         
     

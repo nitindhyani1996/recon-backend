@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, cast, String, select, text, union_all, case
 from sqlalchemy.orm import aliased
 import numpy as np
+from app.utils.file_reader import parse_datetime
 
 class BulkUploadService:
     @staticmethod
@@ -52,9 +53,11 @@ class BulkUploadService:
             
             # Handle both 'datetime' and 'transactiondatetime' column names
             datetime_value = row.get("datetime") or row.get("transactiondatetime")
+            # Parse the datetime string to a proper datetime object
+            parsed_datetime = parse_datetime(datetime_value) if datetime_value else None
             
             new_records.append(ATMTransaction(
-                datetime=datetime_value,
+                datetime=parsed_datetime,
                 terminalid=(row.get("terminalid") or "").strip() or None,
                 location=(row.get("location") or "").strip() or None,
                 atmindex=(row.get("atmindex") or "").strip() or None,
@@ -116,7 +119,11 @@ class BulkUploadService:
             if existing_record:
                 duplicates.append(row)
                 continue
-            new_records.append(SwitchTransaction(datetime=row.get("datetime"), direction=(row.get("direction") or "").strip() or None, mti=(row.get("mti") or "").strip() or None, pan_masked=(row.get("pan_masked") or "").strip() or None, processingcode=(row.get("processingcode") or "").strip() or None, amountminor=row.get("amountminor") if row.get("amountminor") not in ("", None) else None, currency=(row.get("currency") or "").strip() or None, terminalid=(row.get("terminalid") or "").strip() or None, stan=(row.get("stan") or "").strip() or None, rrn=(row.get("rrn") or "").strip().replace(" ", "") or None, source=(row.get("source") or "").strip() or None, destination=(row.get("destination") or "").strip() or None, uploaded_by=uploaded_file_id))
+            
+            # Parse datetime string to proper datetime object
+            parsed_datetime = parse_datetime(row.get("datetime")) if row.get("datetime") else None
+            
+            new_records.append(SwitchTransaction(datetime=parsed_datetime, direction=(row.get("direction") or "").strip() or None, mti=(row.get("mti") or "").strip() or None, pan_masked=(row.get("pan_masked") or "").strip() or None, processingcode=(row.get("processingcode") or "").strip() or None, amountminor=row.get("amountminor") if row.get("amountminor") not in ("", None) else None, currency=(row.get("currency") or "").strip() or None, terminalid=(row.get("terminalid") or "").strip() or None, stan=(row.get("stan") or "").strip() or None, rrn=(row.get("rrn") or "").strip().replace(" ", "") or None, source=(row.get("source") or "").strip() or None, destination=(row.get("destination") or "").strip() or None, uploaded_by=uploaded_file_id))
 
             # new_records.append(SwitchTransaction(
             #     datetime=row["datetime"],
@@ -184,6 +191,11 @@ class BulkUploadService:
                 except (ValueError, TypeError):
                     cr_value = None
             
+            # Parse datetime from various column names
+            datetime_value = (row.get("posted_datetime") or row.get("posteddatetime") or 
+                             row.get("transactiondatetime") or row.get("datetime"))
+            parsed_datetime = parse_datetime(datetime_value) if datetime_value else None
+            
             new_records.append(FlexcubeTransaction(
                 fc_txn_id=fc_txn_id, 
                 rrn=(row.get("rrn") or "").strip().replace(" ", "") or None, 
@@ -193,7 +205,8 @@ class BulkUploadService:
                 cr=cr_value,
                 currency=(row.get("currency") or "").strip() or None, 
                 status=(row.get("status") or "").strip() or None, 
-                description=(row.get("description") or "").strip() or None, 
+                description=(row.get("description") or "").strip() or None,
+                posted_datetime=parsed_datetime,
                 uploaded_by=uploaded_file_id
             ))
 
