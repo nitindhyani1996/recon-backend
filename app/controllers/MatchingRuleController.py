@@ -33,11 +33,23 @@ class MatchingRuleController:
 
             if atm_data and switch_data and flex_cube_data:
                 get_Matching_json = MatchingRuleService.getMatchingRuleJson(db,userId=10,category=1)
+                
+                # Check if matching rules exist
+                if not get_Matching_json or len(get_Matching_json) == 0:
+                    return {
+                        "success": False,
+                        "status_code": 404,
+                        "message": "No matching rules found. Please create a matching rule first.",
+                        "data": []
+                    }
+                
                 matching_json = {
                     "matchCondition": get_Matching_json[0]['matchcondition'],
                     "tolerance": get_Matching_json[0]['tolerance']
                 }
                 reconMatchingData = await MatchingRuleService.match_three_way_async(atm_data,switch_data,flex_cube_data,matching_json)
+                print("Recon Matching Data Length:", len(reconMatchingData))
+                # exit()
                 # ref_no = f"RECON{''.join(__import__('random').choices('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', k=2))}{__import__('datetime').datetime.now().strftime('%d%m%y')}"
                 ref_no = "RECONfZ161225"
                 result = MatchingRuleService.saveReconMatchingSummary(db,reconMatchingData,ref_no)

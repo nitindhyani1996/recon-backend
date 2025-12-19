@@ -6,6 +6,15 @@ from sqlalchemy import pool
 from alembic import context
 from app.db.database import Base, DATABASE_URL
 
+# Import all models so Alembic can detect them
+from app.models.transaction import Transaction
+from app.models.Upload import UploadedFile
+from app.models.atm_transaction import ATMTransaction
+from app.models.SwitchTransaction import SwitchTransaction
+from app.models.FlexcubeTransaction import FlexcubeTransaction
+from app.models.MatchingRule import MatchingRule
+from app.models.ReconMatchingSummary import ReconMatchingSummary
+
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
