@@ -61,62 +61,41 @@ class TransactionInvestigationService:
     @staticmethod
     def get_switch_transaction_by_rrn(db: Session, rrn: str) -> Optional[Dict[str, Any]]:
         """
-        Fetch Switch transaction data by RRN
-        Returns both INBOUND and OUTBOUND transactions if they exist
-        
-        Args:
-            db: Database session
-            rrn: Reference Retrieval Number
-            
-        Returns:
-            Dictionary with Switch transaction data or None if not found
+        Fetch single Switch transaction by RRN
+        (No inbound / outbound separation)
         """
         try:
-            transactions = db.query(SwitchTransaction).filter(
-                SwitchTransaction.rrn == rrn
-            ).all()
+            txn = (
+                db.query(SwitchTransaction)
+                .filter(SwitchTransaction.rrn == rrn)
+                .first()
+            )
 
-            if not transactions:
+            if not txn:
                 return None
 
-            # Separate INBOUND and OUTBOUND
-            inbound = None
-            outbound = None
-
-            for txn in transactions:
-                txn_data = {
-                    "rrn": txn.rrn,
-                    "amount": float(txn.amountminor) if txn.amountminor else None,
-                    "date": txn.datetime.isoformat() if txn.datetime else None,
-                    "mti": txn.mti,
-                    "processing_code": txn.processingcode,
-                    "stan": txn.stan,
-                    "terminal_id": txn.terminalid,
-                    "source": txn.source,
-                    "destination": txn.destination,
-                    "currency_code": txn.currency,
-                    "response_code": txn.responsecode,
-                    "auth_id": txn.authid,
-                    "card_number": txn.pan_masked,
-                    "direction": txn.direction,
-                    "created_at": txn.created_at.isoformat() if hasattr(txn, 'created_at') and txn.created_at else None
-                }
-
-                if txn.direction and txn.direction.upper() == 'INBOUND':
-                    inbound = txn_data
-                elif txn.direction and txn.direction.upper() == 'OUTBOUND':
-                    outbound = txn_data
-
             return {
-                "rrn": rrn,
-                "inbound": inbound,
-                "outbound": outbound,
-                "has_pair": inbound is not None and outbound is not None
+                "rrn": txn.rrn,
+                "amount": float(txn.amountminor) if txn.amountminor is not None else None,
+                "date": txn.datetime.isoformat() if txn.datetime else None,
+                "mti": txn.mti,
+                "processing_code": txn.processingcode,
+                "stan": txn.stan,
+                "terminal_id": txn.terminalid,
+                "source": txn.source,
+                "destination": txn.destination,
+                "currency_code": txn.currency,
+                "response_code": txn.responsecode,
+                "auth_id": txn.authid,
+                "card_number": txn.pan_masked,
+                "direction": txn.direction,
+                "created_at": txn.created_at.isoformat() if getattr(txn, "created_at", None) else None
             }
 
         except Exception as e:
             logger.error(f"Error fetching Switch transaction by RRN {rrn}: {str(e)}")
             return None
+
 
     @staticmethod
     def get_cbs_transaction_by_rrn(db: Session, rrn: str) -> Optional[Dict[str, Any]]:
@@ -185,6 +164,9 @@ class TransactionInvestigationService:
             atm_data = TransactionInvestigationService.get_atm_transaction_by_rrn(db, rrn)
             switch_data = TransactionInvestigationService.get_switch_transaction_by_rrn(db, rrn)
             cbs_data = TransactionInvestigationService.get_cbs_transaction_by_rrn(db, rrn)
+            print('atm_data',atm_data)
+            print('switch_data',switch_data)
+            print('cbs_data',cbs_data)
 
             # Determine matching status
             sources_found = []
