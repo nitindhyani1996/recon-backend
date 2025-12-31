@@ -17,46 +17,43 @@ class TransactionInvestigationService:
     """Service for investigating transactions across multiple sources"""
 
     @staticmethod
-    def get_atm_transaction_by_rrn(db: Session, rrn: str) -> Optional[Dict[str, Any]]:
-        """
-        Fetch ATM transaction data by RRN
-        
-        Args:
-            db: Database session
-            rrn: Reference Retrieval Number
-            
-        Returns:
-            Dictionary with ATM transaction data or None if not found
-        """
+    def get_atm_transaction_by_rrn(db: Session, rrn: str):
         try:
-            transaction = db.query(ATMTransaction).filter(
-                ATMTransaction.rrn == rrn
-            ).first()
+            txns = (
+                db.query(ATMTransaction)
+                .filter(ATMTransaction.rrn == rrn)
+                .all()
+            )
 
-            if not transaction:
-                return None
+            if not txns:
+                return []
 
-            return {
-                "rrn": transaction.rrn,
-                "amount": float(transaction.amount) if transaction.amount else None,
-                "date": transaction.datetime.isoformat() if transaction.datetime else None,
-                "terminal_id": transaction.terminalid,
-                "card_number": transaction.pan_masked,
-                "account_number": transaction.account_masked,
-                "transaction_type": transaction.transactiontype,
-                "currency": transaction.currency,
-                "stan": transaction.stan,
-                "auth_code": transaction.auth,
-                "response_code": transaction.responsecode,
-                "response_description": transaction.responsedesc,
-                "location": transaction.location,
-                "atm_index": transaction.atmindex,
-                "created_at": transaction.created_at.isoformat() if hasattr(transaction, 'created_at') and transaction.created_at else None
-            }
+            atm_list = []
+            for txn in txns:
+                atm_list.append({
+                    "rrn": txn.rrn,
+                    "amount": float(txn.amount) if txn.amount else None,
+                    "date": txn.datetime.isoformat() if txn.datetime else None,
+                    "terminal_id": txn.terminalid,
+                    "card_number": txn.pan_masked,
+                    "account_number": txn.account_masked,
+                    "transaction_type": txn.transactiontype,
+                    "currency": txn.currency,
+                    "stan": txn.stan,
+                    "auth_code": txn.auth,
+                    "response_code": txn.responsecode,
+                    "response_description": txn.responsedesc,
+                    "location": txn.location,
+                    "atm_index": txn.atmindex,
+                    "created_at": txn.created_at.isoformat() if txn.created_at else None
+                })
+
+            return atm_list
 
         except Exception as e:
             logger.error(f"Error fetching ATM transaction by RRN {rrn}: {str(e)}")
-            return None
+            return []
+
 
     @staticmethod
     def get_switch_transaction_by_rrn(db: Session, rrn: str) -> Optional[Dict[str, Any]]:
@@ -68,13 +65,14 @@ class TransactionInvestigationService:
             txn = (
                 db.query(SwitchTransaction)
                 .filter(SwitchTransaction.rrn == rrn)
-                .first()
+                .all()
             )
 
             if not txn:
-                return None
-
-            return {
+                return []
+            switch_list = []
+            for txn in txn:
+                switch_list.append({
                 "rrn": txn.rrn,
                 "amount": float(txn.amountminor) if txn.amountminor is not None else None,
                 "date": txn.datetime.isoformat() if txn.datetime else None,
@@ -91,63 +89,59 @@ class TransactionInvestigationService:
                 "direction": txn.direction,
                 # "amountminor": float(txn.amountminor) if txn.amountminor is not None else None,
                 "created_at": txn.created_at.isoformat() if getattr(txn, "created_at", None) else None
-            }
+            })
+            return switch_list
 
         except Exception as e:
             logger.error(f"Error fetching Switch transaction by RRN {rrn}: {str(e)}")
             return None
 
-
     @staticmethod
-    def get_cbs_transaction_by_rrn(db: Session, rrn: str) -> Optional[Dict[str, Any]]:
-        """
-        Fetch CBS/Flexcube transaction data by RRN
-        
-        Args:
-            db: Database session
-            rrn: Reference Retrieval Number
-            
-        Returns:
-            Dictionary with CBS transaction data or None if not found
-        """
+    def get_cbs_transaction_by_rrn(db: Session, rrn: str):
         try:
-            transaction = db.query(FlexcubeTransaction).filter(
-                FlexcubeTransaction.rrn == rrn
-            ).first()
+            txns = (
+                db.query(FlexcubeTransaction)
+                .filter(FlexcubeTransaction.rrn == rrn)
+                .all()
+            )
 
-            if not transaction:
-                return None
+            if not txns:
+                return []
 
-            # Determine transaction type based on DR/CR
-            txn_type = None
-            amount = None
-            
-            if transaction.dr and float(transaction.dr) > 0:
-                txn_type = "Debit"
-                amount = float(transaction.dr)
-            elif transaction.cr and float(transaction.cr) > 0:
-                txn_type = "Credit"
-                amount = float(transaction.cr)
+            cbs_list = []
+            for txn in txns:
+                txn_type = None
+                amount = None
 
-            return {
-                "rrn": transaction.rrn,
-                "amount": amount,
-                "transaction_type": txn_type,
-                "date": transaction.posted_datetime.isoformat() if transaction.posted_datetime else None,
-                "fc_txn_id": transaction.fc_txn_id,
-                "stan": transaction.stan,
-                "account_number": transaction.account_masked,
-                "dr": float(transaction.dr) if transaction.dr else 0,
-                "cr": float(transaction.cr) if transaction.cr else 0,
-                "currency": transaction.currency,
-                "status": transaction.status,
-                "description": transaction.description,
-                "created_at": transaction.created_at.isoformat() if hasattr(transaction, 'created_at') and transaction.created_at else None
-            }
+                if txn.dr and float(txn.dr) > 0:
+                    txn_type = "Debit"
+                    amount = float(txn.dr)
+                elif txn.cr and float(txn.cr) > 0:
+                    txn_type = "Credit"
+                    amount = float(txn.cr)
+
+                cbs_list.append({
+                    "rrn": txn.rrn,
+                    "amount": amount,
+                    "transaction_type": txn_type,
+                    "date": txn.posted_datetime.isoformat() if txn.posted_datetime else None,
+                    "fc_txn_id": txn.fc_txn_id,
+                    "stan": txn.stan,
+                    "account_number": txn.account_masked,
+                    "dr": float(txn.dr) if txn.dr else 0,
+                    "cr": float(txn.cr) if txn.cr else 0,
+                    "currency": txn.currency,
+                    "status": txn.status,
+                    "description": txn.description,
+                    "created_at": txn.created_at.isoformat() if txn.created_at else None
+                })
+
+            return cbs_list
 
         except Exception as e:
             logger.error(f"Error fetching CBS transaction by RRN {rrn}: {str(e)}")
-            return None
+            return []
+
 
     @staticmethod
     def get_all_transaction_data_by_rrn(db: Session, rrn: str) -> Dict[str, Any]:

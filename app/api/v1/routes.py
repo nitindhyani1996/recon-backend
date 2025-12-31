@@ -5,11 +5,29 @@ from app.controllers.SampleController import SampleController
 from app.controllers.FileUpload import FileUpload
 from app.controllers.TransactionInvestigationController import TransactionInvestigationController
 from app.db.database import get_db
+from app.controllers.ManualTransactionController import ManualTransactionController
+from app.controllers.TxnJournalEntryController import TxnJournalEntryController
 
 router = APIRouter()
 fileUploadController = FileUpload()
 matchingRuleController = MatchingRuleController()
 transactionInvestigationController = TransactionInvestigationController()
+manualTransactionController = ManualTransactionController()
+txnJournalEntryController = TxnJournalEntryController()
+
+@router.post("/journal-entries")
+async def create_journal_entry(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    return await txnJournalEntryController.create_journal_entry(db, payload)
+
+@router.post("/manual-transactions")
+async def create_manual_transaction(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    return await manualTransactionController.create_manual_transaction(db, payload)
 
 @router.post("/upload")
 async def upload_file_correct(file: UploadFile = File(...), db: Session = Depends(get_db)):
