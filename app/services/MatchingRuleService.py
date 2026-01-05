@@ -481,4 +481,68 @@ class MatchingRuleService:
                 "message": "Failed to clear reconciliation data",
                 "error": str(e)
             }
-    
+    @staticmethod
+    def promote_txn_to_matched(
+        db: Session,
+        recon_reference_number: str,
+        rrn: str
+    ):
+        from app.utils.recon_data_formatter import ReconDataFormatter
+
+        summary = (
+            db.query(ReconMatchingSummary)
+            .filter(ReconMatchingSummary.recon_reference_number == recon_reference_number)
+            .first()
+        )
+
+        if not summary:
+            return {
+                "success": False,
+                "message": "Recon matching summary not found"
+            }
+
+        matched = ReconDataFormatter.get_frontend_format(summary.matched or "")
+        partial = ReconDataFormatter.get_frontend_format(summary.partially_matched or "")
+        unmatched = ReconDataFormatter.get_frontend_format(summary.un_matched or "")
+
+        txn = None
+        source_category = None
+
+        for i, row in enumerate(partial):
+            if row.get("RRN") == rrn:
+                txn = partial.pop(i)
+                source_category = "PARTIAL"
+                break
+
+        if not txn:
+            for i, row in enumerate(unmatched):
+                if row.get("RRN") == rrn:
+                    txn = unmatched.pop(i)
+                    source_category = "UNMATCHED"
+                    break
+
+        if not txn:
+            return {
+                "success": False,
+                "message": "Transaction not found in PARTIAL or UNMATCHED"
+            }
+
+        if any(row.get("RRN") == rrn for row in matched):
+            return {
+                "success": False,
+                "message": "Transaction is already MATCHED"
+            }
+
+        txn["Result"] = "MATCHED"
+        matched.append(txn)
+
+        summary.matched = ReconDataFormatter.format_matched_data_csv(matched)
+        summary.partially_matched = ReconDataFormatter.format_matched_data_csv(partial)
+        summary.un_matched = ReconDataFormatter.format_matched_data_csv(unmatched)
+
+        db.commit()
+
+        return {
+            "success": True,
+            "message": f"Transaction {rrn} promoted from {source_category} to MATCHED"
+        }

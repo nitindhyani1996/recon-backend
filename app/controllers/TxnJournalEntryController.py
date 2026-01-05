@@ -3,5 +3,5 @@ from app.services.TxnJournalEntryService import TxnJournalEntryService
 
 class TxnJournalEntryController:
 
-    async def create_journal_entry(self, db: Session, payload: dict):
-        return TxnJournalEntryService.create(db, payload)
+    async def create_journal_entries(self, db: Session, payload: list):
+        return TxnJournalEntryService.create_many(db, payload)

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Body, Depends, Request, UploadFile, File
+from fastapi import APIRouter, Body, Depends, Request, UploadFile, File, Query
 from sqlalchemy.orm import Session
 from app.controllers.MatchingRuleController import MatchingRuleController
 from app.controllers.SampleController import SampleController
@@ -7,20 +7,96 @@ from app.controllers.TransactionInvestigationController import TransactionInvest
 from app.db.database import get_db
 from app.controllers.ManualTransactionController import ManualTransactionController
 from app.controllers.TxnJournalEntryController import TxnJournalEntryController
+from app.controllers.ManualTransactionController import ManualTransactionService
+from app.services.MatchingRuleService import MatchingRuleService
+import json
+from typing import List
 
 router = APIRouter()
 fileUploadController = FileUpload()
 matchingRuleController = MatchingRuleController()
 transactionInvestigationController = TransactionInvestigationController()
 manualTransactionController = ManualTransactionController()
+manualTransactionService = ManualTransactionService()
 txnJournalEntryController = TxnJournalEntryController()
 
-@router.post("/journal-entries")
-async def create_journal_entry(
+
+# @router.patch("/manual-transactions/{recon_reference_number}")
+# async def patch_manual_transaction_by_recon_ref(
+#     recon_reference_number: str,
+#     payload: dict = Body(...),
+#     db: Session = Depends(get_db)
+# ):
+#     return ManualTransactionService.patch(
+#         db, recon_reference_number, payload
+#     )
+import json
+
+@router.patch("/manual-transactions/{recon_reference_number}")
+async def patch_manual_transaction_by_recon_ref(
+    recon_reference_number: str,
     payload: dict = Body(...),
     db: Session = Depends(get_db)
 ):
-    return await txnJournalEntryController.create_journal_entry(db, payload)
+    # 1️⃣ Patch manual_transactions
+    manual_result = ManualTransactionService.patch(
+        db, recon_reference_number, payload
+    )
+
+    print("payload:", json.dumps(payload, indent=2))  # Your existing log (works fine)
+
+    # 2️⃣ Promote in recon_matching_summary
+    if payload.get("reconciled_status") == "MATCHED":
+        print("payload:", json.dumps(payload, indent=2))  # Fixed: Safe print
+        rrn = payload.get("rrn")
+
+        if not rrn:
+            return {
+                "success": False,
+                "message": "RRN is required for reconciliation promotion"
+            }
+
+        promote_result = MatchingRuleService.promote_txn_to_matched(
+            db=db,
+            recon_reference_number=recon_reference_number,
+            rrn=rrn
+        )
+
+        if not promote_result.get("success"):
+            return promote_result
+
+        print("Promotion successful!")  # Optional: Confirm it reached here
+
+    return {
+        "success": True,
+        "message": "Manual transaction updated and reconciliation promoted",
+        "data": manual_result
+    }
+
+# @router.post("/journal-entries")
+# async def create_journal_entry(
+#     payload: dict = Body(...),
+#     db: Session = Depends(get_db)
+# ):
+#     return await txnJournalEntryController.create_journal_entry(db, payload)
+@router.post("/journal-entries")
+async def create_journal_entries(
+    payload: List[dict] = Body(...),
+    db: Session = Depends(get_db)
+):
+    return await txnJournalEntryController.create_journal_entries(db, payload)
+
+# @router.get("/manual-transactions")
+# async def get_all_manual_transactions(
+#     db: Session = Depends(get_db)
+# ):
+#     return await manualTransactionController.get_all_manual_transactions(db)
+@router.get("/manual-transactions")
+async def get_all_manual_transactions(
+    db: Session = Depends(get_db)
+):
+    return await manualTransactionController.get_all_manual_transactions(db)
+
 
 @router.post("/manual-transactions")
 async def create_manual_transaction(
